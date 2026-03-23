@@ -366,32 +366,21 @@ export async function analyzeProblemImage(
     inlineData: { mimeType: mediaType, data: imageBase64 },
   };
 
-  // Step 0: 도형 유무 빠른 판별 (0.5~1초)
-  const hasDiagram = await detectDiagram(client, imageContent);
-  console.log(`도형 판별: ${hasDiagram ? "있음 → Flash(텍스트) + Pro(TikZ) 병렬" : "없음 → Flash만"}`);
+  // detectDiagram 제거 — Flash 텍스트 + Pro TikZ 동시 시작
+  // 도형 없으면 Pro가 null 반환 → 무시
+  const tikzTier = usePro ? "pro" : "pro"; // 항상 Pro (정확도 우선)
+  console.log(`Flash(텍스트) + Pro(TikZ) 병렬 시작`);
 
-  let parsed: Record<string, unknown>;
-  let tikzCode: string | null = null;
+  const [parsed, tikzCode] = await Promise.all([
+    analyzeText(client, imageContent, userMessage),
+    generateTikz(client, imageContent, tikzTier),
+  ]);
 
-  if (hasDiagram) {
-    const tikzTier = usePro ? "pro" : "flash";
-    console.log(`도형 → ${tikzTier.toUpperCase()} TikZ 생성`);
-
-    const [textResult, tikzResult] = await Promise.all([
-      analyzeText(client, imageContent, userMessage),
-      generateTikz(client, imageContent, tikzTier),
-    ]);
-    parsed = textResult;
-    parsed.hasDiagram = true;
-    tikzCode = tikzResult;
-    if (tikzCode) {
-      console.log(`${tikzTier.toUpperCase()} TikZ 생성 성공`);
-    } else {
-      console.warn(`${tikzTier.toUpperCase()} TikZ 생성 실패`);
-    }
+  const hasDiagram = !!tikzCode;
+  if (tikzCode) {
+    console.log("Pro TikZ 생성 성공");
   } else {
-    // 도형 없음 → Flash만
-    parsed = await analyzeText(client, imageContent, userMessage);
+    console.log("도형 없음 (Pro가 TikZ 미반환)");
   }
 
   // TikZ → PNG 렌더링 + 레이아웃 자동 판별

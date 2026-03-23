@@ -578,7 +578,7 @@ export default function Home() {
                   />
                 </div>
               )}
-              {/* Pro 재생성 버튼 (ready 상태 + 도형 있는 문제) */}
+              {/* 재분석 버튼 (ready 상태) */}
               {prob.status === "ready" && (
                 <button
                   onClick={() => handleRegeneratePro(prob)}
@@ -597,7 +597,7 @@ export default function Home() {
                     backdropFilter: "blur(4px)",
                   }}
                 >
-                  Pro 재생성
+                  재분석
                 </button>
               )}
               {/* 삭제 버튼 (pending 상태에서만) */}
