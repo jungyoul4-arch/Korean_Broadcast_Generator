@@ -11,12 +11,14 @@ export interface ProblemData {
   difficulty: number;
   unitName?: string;
   source?: string;
+  headerText?: string;  // 머릿말 (예: "OO쌤의 적중문항")
+  footerText?: string;  // 꼬릿말 (예: "문제분석을 해보세요")
   bodyHtml: string;
   questionHtml: string;
   conditionHtml?: string;
   hasDiagram?: boolean;
-  diagramPngBase64?: string;  // TikZ 렌더링된 도형 PNG (base64)
-  diagramLayout?: "single" | "wide" | "multi"; // 도형 레이아웃 힌트
+  diagramPngBase64?: string;
+  diagramLayout?: "single" | "wide" | "multi";
   choicesHtml?: string;
 }
 
@@ -26,6 +28,14 @@ export function generateProblemHtml(problem: ProblemData): string {
 
   const sourceBlock = problem.source
     ? `<div class="source-tag">${problem.source}</div>`
+    : '';
+
+  const headerBlock = problem.headerText
+    ? `<div class="header-banner">${problem.headerText}</div>`
+    : '';
+
+  const footerBlock = problem.footerText
+    ? `<div class="footer-banner">${problem.footerText}</div>`
     : '';
 
   const conditionBlock = problem.conditionHtml
@@ -198,6 +208,29 @@ body {
   font-weight: 700;
 }
 
+.header-banner {
+  padding: 10px 20px;
+  margin-bottom: 16px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(249,168,37,0.12), rgba(255,143,0,0.08));
+  border: 1px solid rgba(249,168,37,0.25);
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255,213,79,0.95);
+  letter-spacing: 0.3px;
+}
+
+.footer-banner {
+  padding: 10px 20px;
+  margin-top: 16px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(100,181,246,0.1), rgba(66,165,245,0.06));
+  border: 1px solid rgba(100,181,246,0.2);
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(144,202,249,0.9);
+}
+
 .katex, .katex * { color: #fff !important; }
 .katex .mord, .katex .mbin, .katex .mrel,
 .katex .mopen, .katex .mclose, .katex .mpunct,
@@ -207,6 +240,7 @@ body {
 <body>
 <div class="problem-container">
   ${sourceBlock}
+  ${headerBlock}
 
   <div class="problem-header">
     <span class="problem-number">${problem.number}</span>
@@ -223,6 +257,8 @@ body {
     ${diagramBlock}
     ${choicesBlock}
   </div>
+
+  ${footerBlock}
 </div>
 
 <script>

@@ -345,7 +345,9 @@ export async function analyzeProblemImage(
   imageBase64: string,
   mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif",
   problemNumber?: number,
-  source?: string
+  source?: string,
+  headerText?: string,
+  footerText?: string
 ): Promise<AnalysisResult> {
   const client = getClient();
 
@@ -415,6 +417,8 @@ export async function analyzeProblemImage(
     difficulty: p.difficulty || 3,
     unitName: p.unitName || undefined,
     source: source || undefined,
+    headerText: headerText || undefined,
+    footerText: footerText || undefined,
     bodyHtml: fixMathOperators(p.bodyHtml || ""),
     questionHtml: "",
     conditionHtml: p.conditionHtml ? fixMathOperators(p.conditionHtml) : undefined,

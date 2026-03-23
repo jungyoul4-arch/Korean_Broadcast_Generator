@@ -16,6 +16,8 @@ interface ProblemState {
   points: number;
   source: string;
   unitName: string;
+  headerText: string;
+  footerText: string;
   bodyHtml: string;
   html?: string;
   contiHtml?: string;
@@ -72,6 +74,8 @@ export default function Home() {
           points: 0,
           source: "",
           unitName: "",
+          headerText: "",
+          footerText: "",
           bodyHtml: "",
           originalThumb: thumbs[i],
         }));
@@ -113,6 +117,12 @@ export default function Home() {
         const source = prob.source || globalSource;
         if (source) {
           formData.append("source", source);
+        }
+        if (prob.headerText) {
+          formData.append("headerText", prob.headerText);
+        }
+        if (prob.footerText) {
+          formData.append("footerText", prob.footerText);
         }
 
         const res = await fetch("/api/analyze", {
@@ -453,47 +463,76 @@ export default function Home() {
                 pngBase64={prob.pngBase64}
                 contiPngBase64={prob.contiPngBase64}
               />
-              {/* 문항번호 + 출처 입력 (pending 상태에서만) */}
+              {/* 문항번호 + 출처 + 머릿말/꼬릿말 입력 (pending 상태에서만) */}
               {prob.status === "pending" && (
-                <div style={{
-                  display: "flex",
-                  gap: "4px",
-                  marginTop: "-1px",
-                }}>
+                <div style={{ marginTop: "-1px" }}>
+                  <div style={{ display: "flex", gap: "4px" }}>
+                    <input
+                      type="number"
+                      value={prob.number}
+                      onChange={(e) => updateProblem(prob.id, { number: parseInt(e.target.value) || 1 })}
+                      placeholder="번호"
+                      style={{
+                        width: "60px",
+                        padding: "8px 10px",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        borderTop: "none",
+                        background: "rgba(249,168,37,0.08)",
+                        color: "#f9a825",
+                        fontSize: "14px",
+                        fontWeight: 700,
+                        textAlign: "center",
+                        outline: "none",
+                      }}
+                    />
+                    <input
+                      type="text"
+                      value={prob.source}
+                      onChange={(e) => updateProblem(prob.id, { source: e.target.value })}
+                      placeholder="출처 (예: 2026 수능 21번)"
+                      style={{
+                        flex: 1,
+                        padding: "8px 12px",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        borderTop: "none",
+                        borderLeft: "none",
+                        background: "rgba(255,255,255,0.03)",
+                        color: "#fff",
+                        fontSize: "12px",
+                        outline: "none",
+                      }}
+                    />
+                  </div>
                   <input
-                    type="number"
-                    value={prob.number}
-                    onChange={(e) => updateProblem(prob.id, { number: parseInt(e.target.value) || 1 })}
-                    placeholder="번호"
+                    type="text"
+                    value={prob.headerText}
+                    onChange={(e) => updateProblem(prob.id, { headerText: e.target.value })}
+                    placeholder="머릿말 (예: OO쌤의 적중문항)"
                     style={{
-                      width: "60px",
-                      padding: "8px 10px",
-                      borderRadius: "0 0 0 12px",
-                      border: "1px solid rgba(255,255,255,0.08)",
+                      width: "100%",
+                      padding: "7px 12px",
+                      border: "1px solid rgba(249,168,37,0.15)",
                       borderTop: "none",
-                      background: "rgba(249,168,37,0.08)",
-                      color: "#f9a825",
-                      fontSize: "14px",
-                      fontWeight: 700,
-                      textAlign: "center",
+                      background: "rgba(249,168,37,0.04)",
+                      color: "rgba(255,213,79,0.9)",
+                      fontSize: "11px",
                       outline: "none",
                     }}
                   />
                   <input
                     type="text"
-                    value={prob.source}
-                    onChange={(e) => updateProblem(prob.id, { source: e.target.value })}
-                    placeholder="출처 (예: 2026 수능 21번)"
+                    value={prob.footerText}
+                    onChange={(e) => updateProblem(prob.id, { footerText: e.target.value })}
+                    placeholder="꼬릿말 (예: 문제분석을 해보세요)"
                     style={{
-                      flex: 1,
-                      padding: "8px 12px",
-                      borderRadius: "0 0 12px 0",
-                      border: "1px solid rgba(255,255,255,0.08)",
+                      width: "100%",
+                      padding: "7px 12px",
+                      borderRadius: "0 0 12px 12px",
+                      border: "1px solid rgba(100,181,246,0.15)",
                       borderTop: "none",
-                      borderLeft: "none",
-                      background: "rgba(255,255,255,0.03)",
-                      color: "#fff",
-                      fontSize: "12px",
+                      background: "rgba(100,181,246,0.04)",
+                      color: "rgba(144,202,249,0.9)",
+                      fontSize: "11px",
                       outline: "none",
                     }}
                   />

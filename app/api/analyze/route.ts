@@ -28,8 +28,10 @@ export async function POST(request: NextRequest) {
 
     const number = numberStr ? parseInt(numberStr, 10) : undefined;
     const source = formData.get("source") as string | null;
+    const headerText = formData.get("headerText") as string | null;
+    const footerText = formData.get("footerText") as string | null;
 
-    const result = await analyzeProblemImage(base64, mediaType, number, source || undefined);
+    const result = await analyzeProblemImage(base64, mediaType, number, source || undefined, headerText || undefined, footerText || undefined);
 
     return NextResponse.json({
       success: true,
