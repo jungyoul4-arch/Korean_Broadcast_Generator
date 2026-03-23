@@ -246,6 +246,101 @@ export interface AnalysisResult {
   html: string;
 }
 
+/**
+ * Step 0: Flash로 도형 유무만 빠르게 판별 (0.5~1초)
+ */
+async function detectDiagram(
+  client: InstanceType<typeof GoogleGenerativeAI>,
+  imageContent: { inlineData: { mimeType: string; data: string } }
+): Promise<boolean> {
+  const model = client.getGenerativeModel({
+    model: "gemini-3-flash-preview",
+    systemInstruction: "이미지를 보고 도형, 그래프, 그림이 있는지만 판단하세요. 반드시 true 또는 false만 응답하세요.",
+  });
+  const result = await model.generateContent([
+    imageContent,
+    { text: "이 수학 문제에 도형, 그래프, 또는 그림이 있습니까? true/false만 답하세요." },
+  ]);
+  const text = result.response.text()?.trim().toLowerCase() || "";
+  return text.includes("true");
+}
+
+/**
+ * Flash로 텍스트 분석 (도형 TikZ 제외)
+ */
+async function analyzeText(
+  client: InstanceType<typeof GoogleGenerativeAI>,
+  imageContent: { inlineData: { mimeType: string; data: string } },
+  userMessage: string
+): Promise<Record<string, unknown>> {
+  const model = client.getGenerativeModel({
+    model: "gemini-3-flash-preview",
+    systemInstruction: SYSTEM_PROMPT,
+  });
+  const result = await model.generateContent([imageContent, { text: userMessage }]);
+  const responseText = result.response.text();
+  if (!responseText) throw new Error("Gemini Flash 응답 없음");
+
+  let jsonStr = responseText.trim();
+  const jsonMatch = jsonStr.match(/```json\s*([\s\S]*?)```/);
+  if (jsonMatch) jsonStr = jsonMatch[1].trim();
+
+  try {
+    return JSON.parse(jsonStr);
+  } catch {
+    const fixed = jsonStr.replace(
+      /("(?:[^"\\]|\\.)*")|\\(?!["\\/bfnrtu])/g,
+      (match, quoted) => (quoted ? quoted : "\\\\")
+    );
+    try {
+      return JSON.parse(fixed);
+    } catch (e2) {
+      throw new Error(`Flash JSON 파싱 실패: ${(e2 as Error).message}\n원본: ${jsonStr.slice(0, 300)}`);
+    }
+  }
+}
+
+/**
+ * Pro로 TikZ 코드만 생성 (코드블록 응답 — JSON 이스케이프 문제 없음)
+ */
+async function generateTikz(
+  client: InstanceType<typeof GoogleGenerativeAI>,
+  imageContent: { inlineData: { mimeType: string; data: string } }
+): Promise<string | null> {
+  const tikzRulesSection = SYSTEM_PROMPT.includes("## 도형 처리 (TikZ")
+    ? SYSTEM_PROMPT.slice(
+        SYSTEM_PROMPT.indexOf("## 도형 처리 (TikZ"),
+        SYSTEM_PROMPT.indexOf("## 빈칸 상자") > 0
+          ? SYSTEM_PROMPT.indexOf("## 빈칸 상자")
+          : undefined
+      )
+    : "";
+
+  const model = client.getGenerativeModel({
+    model: "gemini-3.1-pro-preview",
+    systemInstruction: [
+      "당신은 수학 문제의 도형을 TikZ 코드로 변환하는 전문가입니다.",
+      "사용자가 수학 문제 이미지를 보내면, 도형/그래프 부분만 TikZ 코드로 생성합니다.",
+      "",
+      "응답 형식: ```latex 코드블록 안에 \\begin{tikzpicture}...\\end{tikzpicture}만 넣으세요.",
+      "JSON으로 감싸지 마세요. 순수 TikZ 코드만 응답하세요.",
+      "",
+      tikzRulesSection,
+    ].join("\n"),
+  });
+
+  const result = await model.generateContent([
+    imageContent,
+    { text: "이 수학 문제의 도형/그래프를 TikZ 코드로 생성해주세요. ```latex 코드블록으로 응답하세요." },
+  ]);
+  const text = result.response.text();
+  if (!text) return null;
+
+  const codeMatch = text.match(/```(?:latex|tikz)?\s*([\s\S]*?)```/);
+  const tikzCode = codeMatch ? codeMatch[1].trim() : text.trim();
+  return tikzCode.includes("\\begin{tikzpicture}") ? tikzCode : null;
+}
+
 export async function analyzeProblemImage(
   imageBase64: string,
   mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif",
@@ -253,12 +348,6 @@ export async function analyzeProblemImage(
   source?: string
 ): Promise<AnalysisResult> {
   const client = getClient();
-
-  // 1차: Flash로 빠르게 분석 (도형 여부 판단 포함)
-  const flashModel = client.getGenerativeModel({
-    model: "gemini-3-flash-preview",
-    systemInstruction: SYSTEM_PROMPT,
-  });
 
   const userMessage = problemNumber
     ? `이 수학 문제를 분석해주세요. 문제 번호는 ${problemNumber}번입니다.`
@@ -268,113 +357,60 @@ export async function analyzeProblemImage(
     inlineData: { mimeType: mediaType, data: imageBase64 },
   };
 
-  let result = await flashModel.generateContent([imageContent, { text: userMessage }]);
-  let responseText = result.response.text();
+  // Step 0: 도형 유무 빠른 판별 (0.5~1초)
+  const hasDiagram = await detectDiagram(client, imageContent);
+  console.log(`도형 판별: ${hasDiagram ? "있음 → Flash(텍스트) + Pro(TikZ) 병렬" : "없음 → Flash만"}`);
 
-  if (!responseText) {
-    throw new Error("Gemini API에서 텍스트 응답을 받지 못했습니다");
-  }
-
-  let jsonStr = responseText.trim();
-  let jsonMatch = jsonStr.match(/```json\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1].trim();
-
-  // Gemini가 JSON 안에 raw 백슬래시를 넣는 경우 수리
-  // (TikZ 코드의 \begin, \frac 등이 JSON 이스케이프 안 됨)
   let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(jsonStr);
-  } catch {
-    // 백슬래시 수리 시도: JSON string value 안의 단일 \를 \\로
-    const fixed = jsonStr.replace(
-      /("(?:[^"\\]|\\.)*")|\\(?!["\\/bfnrtu])/g,
-      (match, quoted) => (quoted ? quoted : "\\\\")
-    );
-    try {
-      parsed = JSON.parse(fixed);
-    } catch (e2) {
-      throw new Error(`Gemini 응답 JSON 파싱 실패: ${(e2 as Error).message}\n원본: ${jsonStr.slice(0, 300)}`);
-    }
-  }
+  let tikzCode: string | null = null;
 
-  // 2차: 도형이 있으면 Pro로 TikZ만 재생성 (Flash 텍스트 결과 재활용)
-  if (parsed.hasDiagram) {
-    console.log("도형 감지 → Gemini Pro로 TikZ만 재생성...");
-
-    // TikZ 규칙 부분만 추출
-    const tikzRulesSection = SYSTEM_PROMPT.includes("## 도형 처리 (TikZ")
-      ? SYSTEM_PROMPT.slice(
-          SYSTEM_PROMPT.indexOf("## 도형 처리 (TikZ"),
-          SYSTEM_PROMPT.indexOf("## 빈칸 상자") > 0
-            ? SYSTEM_PROMPT.indexOf("## 빈칸 상자")
-            : undefined
-        )
-      : "";
-
-    const proModel = client.getGenerativeModel({
-      model: "gemini-3.1-pro-preview",
-      systemInstruction: [
-        "당신은 수학 문제의 도형을 TikZ 코드로 변환하는 전문가입니다.",
-        "사용자가 수학 문제 이미지를 보내면, 도형/그래프 부분만 TikZ 코드로 생성합니다.",
-        "텍스트 분석은 이미 완료되었으므로 TikZ 코드만 응답하세요.",
-        "",
-        "응답 형식: ```latex 코드블록 안에 \\begin{tikzpicture}...\\end{tikzpicture}만 넣으세요.",
-        "JSON으로 감싸지 마세요. 순수 TikZ 코드만 응답하세요.",
-        "",
-        tikzRulesSection,
-      ].join("\n"),
-    });
-
-    const tikzResult = await proModel.generateContent([
-      imageContent,
-      { text: "이 수학 문제의 도형/그래프를 TikZ 코드로 생성해주세요. ```latex 코드블록으로 응답하세요." },
+  if (hasDiagram) {
+    // 도형 있음 → Flash(텍스트) + Pro(TikZ) 병렬 실행
+    const [textResult, tikzResult] = await Promise.all([
+      analyzeText(client, imageContent, userMessage),
+      generateTikz(client, imageContent),
     ]);
-    const tikzText = tikzResult.response.text();
-
-    if (tikzText) {
-      // ```latex ... ``` 또는 ```tikz ... ``` 또는 ``` ... ``` 에서 추출
-      const codeMatch = tikzText.match(/```(?:latex|tikz)?\s*([\s\S]*?)```/);
-      const tikzCode = codeMatch ? codeMatch[1].trim() : tikzText.trim();
-      if (tikzCode.includes("\\begin{tikzpicture}")) {
-        parsed.diagramTikz = tikzCode;
-      } else {
-        console.warn("Pro TikZ 추출 실패, Flash 결과 사용");
-      }
+    parsed = textResult;
+    parsed.hasDiagram = true;
+    tikzCode = tikzResult;
+    if (tikzCode) {
+      console.log("Pro TikZ 생성 성공");
+    } else {
+      console.warn("Pro TikZ 생성 실패");
     }
+  } else {
+    // 도형 없음 → Flash만
+    parsed = await analyzeText(client, imageContent, userMessage);
   }
 
-  // TikZ 도형이 있으면 PNG로 렌더링
+  // TikZ → PNG 렌더링
   let diagramPngBase64: string | undefined;
-  if (parsed.hasDiagram && parsed.diagramTikz) {
-    // JSON 파싱 수리로 이중 이스케이프된 백슬래시 정규화
-    // \\begin → \begin, \\frac → \frac 등
-    let tikzCode = String(parsed.diagramTikz);
-    tikzCode = tikzCode.replace(/\\\\(?=[a-zA-Z])/g, "\\");
-
+  if (tikzCode) {
     try {
       console.log("TikZ 렌더링 시작:", tikzCode.slice(0, 100));
       diagramPngBase64 = await renderTikzToPng(tikzCode);
       console.log("TikZ 렌더링 성공");
     } catch (err) {
       console.error("TikZ 렌더링 실패:", err);
-      // 도형 렌더링 실패해도 문제 텍스트는 계속 진행
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const p = parsed as any;
   const problemData: ProblemData = {
-    number: problemNumber ?? parsed.number ?? 1,
-    subject: parsed.subject || "수학",
-    type: parsed.type || "주관식",
-    points: parsed.points || 4,
-    difficulty: parsed.difficulty || 3,
-    unitName: parsed.unitName || undefined,
+    number: problemNumber ?? p.number ?? 1,
+    subject: p.subject || "수학",
+    type: p.type || "주관식",
+    points: p.points || 4,
+    difficulty: p.difficulty || 3,
+    unitName: p.unitName || undefined,
     source: source || undefined,
-    bodyHtml: fixMathOperators(parsed.bodyHtml || ""),
-    questionHtml: "", // 구하고자 하는 것은 bodyHtml에 포함, 별도 표시 안 함
-    conditionHtml: parsed.conditionHtml ? fixMathOperators(parsed.conditionHtml) : undefined,
-    hasDiagram: parsed.hasDiagram || false,
+    bodyHtml: fixMathOperators(p.bodyHtml || ""),
+    questionHtml: "",
+    conditionHtml: p.conditionHtml ? fixMathOperators(p.conditionHtml) : undefined,
+    hasDiagram: !!hasDiagram,
     diagramPngBase64,
-    choicesHtml: parsed.choicesHtml || undefined,
+    choicesHtml: p.choicesHtml || undefined,
   };
 
   const html = generateProblemHtml(problemData);
