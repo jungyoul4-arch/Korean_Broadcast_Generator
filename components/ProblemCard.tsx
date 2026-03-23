@@ -1,19 +1,21 @@
 "use client";
 
+import { memo } from "react";
+
 interface ProblemCardProps {
   number: number;
   subject: string;
   unitName?: string;
   bodyHtml: string;
-  originalThumb?: string; // 원본 이미지 썸네일 URL
-  previewImage?: string; // base64 PNG (초록 배경 미리보기)
+  originalThumb?: string;
+  previewImage?: string;
   status: "pending" | "analyzing" | "ready" | "rendering" | "done" | "error";
   errorMessage?: string;
-  pngBase64?: string; // 최종 투명 PNG
-  contiPngBase64?: string; // 콘티 PNG
+  pngBase64?: string;
+  contiPngBase64?: string;
 }
 
-export default function ProblemCard({
+export default memo(function ProblemCard({
   number,
   subject,
   unitName,
@@ -220,4 +222,4 @@ export default function ProblemCard({
       </div>
     </div>
   );
-}
+})

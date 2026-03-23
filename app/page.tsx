@@ -154,7 +154,7 @@ export default function Home() {
     setPhase("preview");
   }, [problems, updateProblem, globalSource]);
 
-  // 2. 미리보기 확인 후 렌더링 시작
+  // 2. 미리보기 확인 후 렌더링 시작 (SSE 스트리밍)
   const handleRender = useCallback(async () => {
     const readyProblems = problems.filter(
       (p) => p.status === "ready" && p.html
@@ -164,7 +164,6 @@ export default function Home() {
     setPhase("rendering");
     setRenderProgress(0);
 
-    // 상태를 rendering으로 변경
     readyProblems.forEach((p) => {
       updateProblem(p.id, { status: "rendering" });
     });
@@ -184,7 +183,7 @@ export default function Home() {
               .filter((p) => p.contiHtml)
               .map((p) => ({
                 html: p.contiHtml!,
-                number: p.number + 1000, // 콘티는 1000+번호로 구분
+                number: p.number + 1000,
                 type: "conti" as const,
               })),
           ],
@@ -192,29 +191,53 @@ export default function Home() {
       });
 
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "렌더링 실패");
+        const text = await res.text();
+        throw new Error(text || "렌더링 실패");
       }
 
-      const data = await res.json();
+      // SSE 스트리밍 소비 — 완료되는 대로 실시간 반영
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("스트림을 읽을 수 없습니다");
 
-      // 결과 반영
-      for (const result of data.results) {
-        if (result.number >= 1000) {
-          // 콘티 PNG
-          const prob = readyProblems.find((p) => p.number === result.number - 1000);
-          if (prob) {
-            updateProblem(prob.id, { contiPngBase64: result.pngBase64 });
-          }
-        } else {
-          // 문제 PNG
-          const prob = readyProblems.find((p) => p.number === result.number);
-          if (prob) {
-            updateProblem(prob.id, {
-              status: "done",
-              pngBase64: result.pngBase64,
-            });
-            setRenderProgress((prev) => prev + 1);
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") continue;
+
+          try {
+            const result = JSON.parse(data);
+            if (result.error) throw new Error(result.error);
+
+            if (result.number >= 1000) {
+              const prob = readyProblems.find((p) => p.number === result.number - 1000);
+              if (prob) {
+                updateProblem(prob.id, { contiPngBase64: result.pngBase64 });
+              }
+            } else {
+              const prob = readyProblems.find((p) => p.number === result.number);
+              if (prob) {
+                updateProblem(prob.id, {
+                  status: "done",
+                  pngBase64: result.pngBase64,
+                });
+                setRenderProgress((prev) => prev + 1);
+              }
+            }
+          } catch (e) {
+            if (e instanceof Error && e.message !== "렌더링 오류") {
+              console.warn("SSE 파싱 경고:", e);
+            }
           }
         }
       }
@@ -230,28 +253,40 @@ export default function Home() {
     }
   }, [problems, updateProblem]);
 
+  // base64 → Blob 다운로드 헬퍼 (data: URL보다 안정적)
+  const downloadBase64 = useCallback((base64: string, filename: string) => {
+    const byteChars = atob(base64);
+    const byteArray = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) {
+      byteArray[i] = byteChars.charCodeAt(i);
+    }
+    const blob = new Blob([byteArray], { type: "image/png" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, []);
+
   // 3. 개별 다운로드 (문제)
   const handleDownloadProblem = useCallback(
     (prob: ProblemState) => {
       if (!prob.pngBase64) return;
-      const link = document.createElement("a");
-      link.href = `data:image/png;base64,${prob.pngBase64}`;
-      link.download = `prob${prob.number}_문제.png`;
-      link.click();
+      downloadBase64(prob.pngBase64, `prob${prob.number}_문제.png`);
     },
-    []
+    [downloadBase64]
   );
 
   // 3-1. 개별 다운로드 (콘티)
   const handleDownloadConti = useCallback(
     (prob: ProblemState) => {
       if (!prob.contiPngBase64) return;
-      const link = document.createElement("a");
-      link.href = `data:image/png;base64,${prob.contiPngBase64}`;
-      link.download = `prob${prob.number}_콘티.png`;
-      link.click();
+      downloadBase64(prob.contiPngBase64, `prob${prob.number}_콘티.png`);
     },
-    []
+    [downloadBase64]
   );
 
   // 4. 전체 ZIP 다운로드
@@ -261,12 +296,9 @@ export default function Home() {
     );
     if (doneProblems.length === 0) return;
 
-    // 단일 파일이면 직접 다운로드 (API 호출 불필요)
+    // 단일 파일이면 직접 다운로드
     if (doneProblems.length === 1) {
-      const link = document.createElement("a");
-      link.href = `data:image/png;base64,${doneProblems[0].pngBase64}`;
-      link.download = `prob${doneProblems[0].number}_문제.png`;
-      link.click();
+      downloadBase64(doneProblems[0].pngBase64!, `prob${doneProblems[0].number}_문제.png`);
       return;
     }
 

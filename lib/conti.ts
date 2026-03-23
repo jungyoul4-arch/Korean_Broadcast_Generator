@@ -81,7 +81,7 @@ export async function generateConti(
   mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif"
 ): Promise<ContiData> {
   const response = await getClient().messages.create({
-    model: "claude-opus-4-6",
+    model: "claude-sonnet-4-6",
     max_tokens: 2048,
     system: CONTI_PROMPT,
     messages: [

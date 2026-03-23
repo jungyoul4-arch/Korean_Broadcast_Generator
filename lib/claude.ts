@@ -281,22 +281,49 @@ export async function analyzeProblemImage(
 
   let parsed = JSON.parse(jsonStr);
 
-  // 2차: 도형이 있으면 Pro로 재분석 (TikZ 정확도 향상)
+  // 2차: 도형이 있으면 Pro로 TikZ만 재생성 (Flash 텍스트 결과 재활용)
   if (parsed.hasDiagram) {
-    console.log("도형 감지 → Gemini Pro로 재분석...");
+    console.log("도형 감지 → Gemini Pro로 TikZ만 재생성...");
+
+    // TikZ 규칙 부분만 추출
+    const tikzRulesSection = SYSTEM_PROMPT.includes("## 도형 처리 (TikZ")
+      ? SYSTEM_PROMPT.slice(
+          SYSTEM_PROMPT.indexOf("## 도형 처리 (TikZ"),
+          SYSTEM_PROMPT.indexOf("## 빈칸 상자") > 0
+            ? SYSTEM_PROMPT.indexOf("## 빈칸 상자")
+            : undefined
+        )
+      : "";
+
     const proModel = client.getGenerativeModel({
       model: "gemini-3.1-pro-preview",
-      systemInstruction: SYSTEM_PROMPT,
+      systemInstruction: [
+        "당신은 수학 문제의 도형을 TikZ 코드로 변환하는 전문가입니다.",
+        "사용자가 수학 문제 이미지를 보내면, 도형/그래프 부분만 TikZ 코드로 생성합니다.",
+        "텍스트 분석은 이미 완료되었으므로 TikZ 코드만 응답하세요.",
+        "",
+        "응답 형식: ```latex 코드블록 안에 \\begin{tikzpicture}...\\end{tikzpicture}만 넣으세요.",
+        "JSON으로 감싸지 마세요. 순수 TikZ 코드만 응답하세요.",
+        "",
+        tikzRulesSection,
+      ].join("\n"),
     });
 
-    result = await proModel.generateContent([imageContent, { text: userMessage }]);
-    responseText = result.response.text();
+    const tikzResult = await proModel.generateContent([
+      imageContent,
+      { text: "이 수학 문제의 도형/그래프를 TikZ 코드로 생성해주세요. ```latex 코드블록으로 응답하세요." },
+    ]);
+    const tikzText = tikzResult.response.text();
 
-    if (responseText) {
-      jsonStr = responseText.trim();
-      jsonMatch = jsonStr.match(/```json\s*([\s\S]*?)```/);
-      if (jsonMatch) jsonStr = jsonMatch[1].trim();
-      parsed = JSON.parse(jsonStr);
+    if (tikzText) {
+      // ```latex ... ``` 또는 ```tikz ... ``` 또는 ``` ... ``` 에서 추출
+      const codeMatch = tikzText.match(/```(?:latex|tikz)?\s*([\s\S]*?)```/);
+      const tikzCode = codeMatch ? codeMatch[1].trim() : tikzText.trim();
+      if (tikzCode.includes("\\begin{tikzpicture}")) {
+        parsed.diagramTikz = tikzCode;
+      } else {
+        console.warn("Pro TikZ 추출 실패, Flash 결과 사용");
+      }
     }
   }
 
