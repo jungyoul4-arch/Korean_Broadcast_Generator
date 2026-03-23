@@ -1,0 +1,12 @@
+node_modules/
+.next/
+.env.local
+.env*.local
+.superpowers/
+output/*.png
+
+.DS_Store
+.env
+output/
+.env
+.DS_Store

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "math-broadcast-preview",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "output", "-p", "3030", "--cors"],
+      "port": 3030
+    }
+  ]
+}
