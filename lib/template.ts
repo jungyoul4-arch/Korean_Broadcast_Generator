@@ -141,8 +141,9 @@ body {
 }
 
 .diagram-area {
-  margin: 16px 0;
+  margin: 20px auto 16px;
   text-align: center;
+  max-width: 55%;
 }
 .diagram-img {
   max-width: 100%;
