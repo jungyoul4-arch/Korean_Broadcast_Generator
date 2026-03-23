@@ -95,7 +95,7 @@ export default function Home() {
     const pendingProblems = problems.filter((p) => p.status === "pending");
     if (pendingProblems.length === 0) return;
 
-    const ANALYZE_BATCH = 5; // 동시 분석 수 (유료 플랜)
+    const ANALYZE_BATCH = 10; // 동시 분석 수 (유료 플랜 — 1000+ RPM)
 
     pendingProblems.forEach((p) => {
       updateProblem(p.id, { status: "analyzing" });
