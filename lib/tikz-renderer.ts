@@ -24,9 +24,14 @@ export async function renderTikzToPng(tikzCode: string): Promise<string> {
   const pngFile = path.join(tmpDir, "diagram.png");
 
   try {
+    // Linux에서는 폰트 이름이 다를 수 있음 (NanumMyeongjo vs Nanum Myeongjo)
+    const isLinux = process.platform === "linux";
+    const fontConfig = isLinux
+      ? `\\usepackage{kotex}\n\\setmainhangulfont{NanumMyeongjo}[AutoFakeBold=2.5]`
+      : `\\usepackage{kotex}\n\\setmainhangulfont{Nanum Myeongjo}`;
+
     const texContent = `\\documentclass[border=8pt]{standalone}
-\\usepackage{kotex}
-\\setmainhangulfont{Nanum Myeongjo}
+${fontConfig}
 \\usepackage{amsmath, amssymb}
 \\usepackage{tikz}
 \\usepackage{xcolor}

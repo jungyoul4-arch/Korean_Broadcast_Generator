@@ -31,9 +31,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     texlive-fonts-recommended \
     texlive-lang-korean \
     fonts-nanum \
+    fontconfig \
     # 유틸리티
     ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && fc-cache -fv
 
 # Playwright Chromium 브라우저 설치
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
