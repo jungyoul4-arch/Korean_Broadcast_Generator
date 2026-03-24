@@ -217,22 +217,83 @@ hasDiagram: false, diagramTikz: null
   예시: "0 < ∠CAB < π/6인 호 AB 위의 점 C에 대하여" 를 한 줄로 유지`;
 
 /**
+ * JSON 파싱 전 LaTeX 백슬래시 이스케이프 전처리
+ *
+ * 문제: Gemini가 JSON 안에 `\times`를 넣으면, `\t`가 JSON 탭 이스케이프로 해석됨
+ *   - `\times` → `\t`(탭) + `imes`  →  "imes" 으로 표시
+ *   - `\theta` → `\t`(탭) + `heta`
+ *   - `\nabla` → `\n`(줄바꿈) + `abla`
+ *   - `\beta`  → `\b`(백스페이스) + `eta`
+ *   - `\forall`→ `\f`(폼피드) + `orall`
+ *   - `\right` → `\r`(캐리지리턴) + `ight`
+ *
+ * 해결: \ 뒤에 알파벳 2글자 이상이면 LaTeX 명령 → \\ 로 이스케이프
+ *       이미 \\로 이스케이프된 것은 건드리지 않음
+ *       JSON 이스케이프(\n, \t 등)는 1글자이므로 {2,} 패턴에 안 걸림
+ */
+function escapeLatexInJson(jsonStr: string): string {
+  return jsonStr.replace(
+    /\\\\|\\([a-zA-Z]{2,})/g,
+    (match, letters) => (letters ? "\\\\" + letters : match)
+  );
+}
+
+/**
  * 수식 내 함수명 자동 교정
  */
 function fixMathOperators(html: string): string {
+  // 연산자 함수 (백슬래시 없이 쓰면 이탤릭으로 렌더링되는 것들)
   const operators = [
     "lim", "log", "sin", "cos", "tan", "max", "min", "sup", "inf",
-    "ln", "exp", "sec", "csc", "cot", "arcsin", "arccos", "arctan"
+    "ln", "exp", "sec", "csc", "cot", "arcsin", "arccos", "arctan",
   ];
+
+  // 기호 명령어 (백슬래시 없이 쓰면 완전히 깨지는 것들)
+  const symbols = [
+    "times", "cdot", "div", "pm", "mp", "ast", "star", "circ",
+    "bullet", "oplus", "otimes", "odot",
+    "leq", "geq", "neq", "approx", "equiv", "sim", "simeq",
+    "ll", "gg", "prec", "succ", "preceq", "succeq",
+    "subset", "supset", "subseteq", "supseteq", "in", "notin", "ni",
+    "cap", "cup", "setminus", "emptyset", "varnothing",
+    "forall", "exists", "nexists", "neg", "land", "lor",
+    "implies", "iff", "therefore", "because",
+    "alpha", "beta", "gamma", "delta", "epsilon", "varepsilon",
+    "zeta", "eta", "theta", "vartheta", "iota", "kappa",
+    "lambda", "mu", "nu", "xi", "omicron", "pi", "varpi",
+    "rho", "varrho", "sigma", "varsigma", "tau", "upsilon",
+    "phi", "varphi", "chi", "psi", "omega",
+    "Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta",
+    "Theta", "Iota", "Kappa", "Lambda", "Mu", "Nu", "Xi",
+    "Omicron", "Pi", "Rho", "Sigma", "Tau", "Upsilon",
+    "Phi", "Chi", "Psi", "Omega",
+    "infty", "nabla", "partial", "angle", "measuredangle",
+    "perp", "parallel", "propto",
+    "rightarrow", "leftarrow", "leftrightarrow",
+    "Rightarrow", "Leftarrow", "Leftrightarrow",
+    "uparrow", "downarrow", "mapsto", "hookrightarrow", "hookleftarrow",
+    "to", "gets",
+    "quad", "qquad", "text", "mathrm", "mathbf", "mathit", "mathbb",
+    "overline", "underline", "hat", "bar", "vec", "dot", "ddot", "tilde",
+    "sqrt", "frac", "dfrac", "tfrac", "binom", "dbinom", "tbinom",
+    "sum", "prod", "coprod", "int", "iint", "iiint", "oint",
+    "bigcup", "bigcap", "bigoplus", "bigotimes",
+    "displaystyle", "textstyle", "scriptstyle",
+    "left", "right", "big", "Big", "bigg", "Bigg",
+    "not", "prime", "ldots", "cdots", "vdots", "ddots",
+  ];
+
+  const allOps = [...operators, ...symbols];
 
   let result = html.replace(/\$\$[\s\S]*?\$\$|\$[^$]+?\$/g, (match) => {
     let fixed = match;
-    for (const op of operators) {
+    for (const op of allOps) {
       const regex = new RegExp(`(?<!\\\\)(?<![a-zA-Z])${op}(?![a-zA-Z])`, "g");
       fixed = fixed.replace(regex, `\\${op}`);
     }
     fixed = fixed.replace(/->/g, "\\to");
-    for (const op of operators) {
+    // 이중 백슬래시 수리 (\\\\op → \\op)
+    for (const op of allOps) {
       fixed = fixed.replace(new RegExp(`\\\\\\\\${op}`, "g"), `\\${op}`);
     }
     return fixed;
@@ -285,18 +346,17 @@ async function analyzeText(
   const jsonMatch = jsonStr.match(/```json\s*([\s\S]*?)```/);
   if (jsonMatch) jsonStr = jsonMatch[1].trim();
 
+  // ★ 핵심 수정: JSON 파싱 전에 항상 LaTeX 백슬래시를 이스케이프
+  // \times → \\times, \theta → \\theta 등
+  // 이렇게 하지 않으면 \t(탭), \n(줄바꿈) 등 JSON 이스케이프와 충돌
+  const escaped = escapeLatexInJson(jsonStr);
+
   try {
-    return JSON.parse(jsonStr);
+    return JSON.parse(escaped);
   } catch {
-    // LaTeX 백슬래시 수리: \sin, \frac, \pi 등 2글자 이상 명령어 → \\sin 등
-    // \n, \t, \b 같은 1글자 JSON 이스케이프는 건드리지 않음
-    // 이미 이스케이프된 \\ 도 건드리지 않음
-    const fixed = jsonStr.replace(
-      /\\\\|\\([a-zA-Z]{2,})/g,
-      (match, letters) => letters ? "\\\\" + letters : match
-    );
+    // 그래도 실패하면 원본으로 한 번 더 시도
     try {
-      return JSON.parse(fixed);
+      return JSON.parse(jsonStr);
     } catch (e2) {
       throw new Error(`Flash JSON 파싱 실패: ${(e2 as Error).message}\n원본: ${jsonStr.slice(0, 300)}`);
     }

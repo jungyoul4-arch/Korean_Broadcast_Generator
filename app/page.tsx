@@ -4,6 +4,7 @@ import { useState, useCallback } from "react";
 import DropZone from "@/components/DropZone";
 import ProblemCard from "@/components/ProblemCard";
 import ProgressBar from "@/components/ProgressBar";
+import SaveModal from "@/components/SaveModal";
 
 interface ProblemState {
   id: string;
@@ -35,6 +36,9 @@ export default function Home() {
   const [analyzeProgress, setAnalyzeProgress] = useState(0);
   const [renderProgress, setRenderProgress] = useState(0);
   const [globalSource, setGlobalSource] = useState("");
+  const [saveModalTarget, setSaveModalTarget] = useState<"all" | string | null>(null);
+  const [savingToLibrary, setSavingToLibrary] = useState(false);
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
 
   const updateProblem = useCallback(
     (id: string, updates: Partial<ProblemState>) => {
@@ -387,7 +391,84 @@ export default function Home() {
     setPhase("upload");
     setAnalyzeProgress(0);
     setRenderProgress(0);
+    setSavedIds(new Set());
   }, []);
+
+  // 6. 라이브러리에 저장 — 자동 태그 생성
+  const generateAutoTags = useCallback((prob: ProblemState): string[] => {
+    const tags: string[] = [];
+    if (prob.subject) tags.push(prob.subject);
+    if (prob.unitName) tags.push(prob.unitName);
+    if (prob.type) tags.push(prob.type);
+    if (prob.points) tags.push(`${prob.points}점`);
+    const src = prob.source || globalSource;
+    if (src) {
+      const patterns: RegExp[] = [
+        /(\d{4})/, /(수능|모의고사|학력평가|교육청|평가원)/,
+        /(6월|9월|3월|4월|7월|10월|11월)/, /(고[123]|중[123])/, /(기출)/,
+      ];
+      for (const pat of patterns) {
+        const m = src.match(pat);
+        if (m) tags.push(m[1]);
+      }
+    }
+    return [...new Set(tags)];
+  }, [globalSource]);
+
+  // 원본 이미지 File → base64
+  const fileToBase64 = useCallback((file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // data:image/...;base64, 프리픽스 제거
+        resolve(result.includes(",") ? result.split(",")[1] : result);
+      };
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  const handleSaveToLibrary = useCallback(async (tags: string[]) => {
+    setSavingToLibrary(true);
+    try {
+      const targetProblems = saveModalTarget === "all"
+        ? problems.filter((p) => p.status === "done" && p.pngBase64 && !savedIds.has(p.id))
+        : problems.filter((p) => p.id === saveModalTarget && p.pngBase64);
+
+      for (const prob of targetProblems) {
+        const originalBase64 = prob.file ? await fileToBase64(prob.file) : undefined;
+        const res = await fetch("/api/library", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            subject: prob.subject,
+            unitName: prob.unitName,
+            type: prob.type,
+            points: prob.points,
+            difficulty: 0,
+            source: prob.source || globalSource,
+            bodyHtml: prob.bodyHtml,
+            headerText: prob.headerText,
+            footerText: prob.footerText,
+            tags,
+            originalImageBase64: originalBase64,
+            problemPngBase64: prob.pngBase64,
+            contiPngBase64: prob.contiPngBase64,
+            html: prob.html,
+            contiHtml: prob.contiHtml,
+          }),
+        });
+        if (res.ok) {
+          setSavedIds((prev) => new Set(prev).add(prob.id));
+        }
+      }
+      setSaveModalTarget(null);
+    } catch (err) {
+      console.error("라이브러리 저장 오류:", err);
+    } finally {
+      setSavingToLibrary(false);
+    }
+  }, [saveModalTarget, problems, savedIds, globalSource, fileToBase64]);
 
   const pendingCount = problems.filter((p) => p.status === "pending").length;
   const readyCount = problems.filter((p) => p.status === "ready").length;
@@ -626,7 +707,7 @@ export default function Home() {
                   ×
                 </button>
               )}
-              {/* 개별 다운로드 버튼들 */}
+              {/* 개별 다운로드 + 저장 버튼들 */}
               {prob.status === "done" && prob.pngBase64 && (
                 <div style={{
                   position: "absolute",
@@ -635,6 +716,38 @@ export default function Home() {
                   display: "flex",
                   gap: "4px",
                 }}>
+                  {!savedIds.has(prob.id) ? (
+                    <button
+                      onClick={() => setSaveModalTarget(prob.id)}
+                      style={{
+                        background: "rgba(249,168,37,0.7)",
+                        border: "1px solid rgba(249,168,37,0.5)",
+                        borderRadius: "8px",
+                        color: "#fff",
+                        padding: "4px 10px",
+                        fontSize: "11px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        backdropFilter: "blur(4px)",
+                      }}
+                    >
+                      저장
+                    </button>
+                  ) : (
+                    <span
+                      style={{
+                        background: "rgba(102,187,106,0.7)",
+                        borderRadius: "8px",
+                        color: "#fff",
+                        padding: "4px 10px",
+                        fontSize: "11px",
+                        fontWeight: 600,
+                        backdropFilter: "blur(4px)",
+                      }}
+                    >
+                      저장됨
+                    </span>
+                  )}
                   <button
                     onClick={() => handleDownloadProblem(prob)}
                     style={{
@@ -745,6 +858,26 @@ export default function Home() {
           </button>
         )}
 
+        {/* 전체 라이브러리 저장 버튼 */}
+        {phase === "done" && doneCount > 0 && doneCount > savedIds.size && (
+          <button
+            onClick={() => setSaveModalTarget("all")}
+            style={{
+              padding: "12px 28px",
+              borderRadius: "10px",
+              border: "none",
+              background: "linear-gradient(135deg, #f9a825, #ff8f00)",
+              color: "#fff",
+              fontSize: "16px",
+              fontWeight: 700,
+              cursor: "pointer",
+              boxShadow: "0 4px 16px rgba(249,168,37,0.3)",
+            }}
+          >
+            전체 라이브러리 저장 ({doneCount - savedIds.size}개)
+          </button>
+        )}
+
         {/* 새로 시작 */}
         {(phase === "preview" || phase === "done") && (
           <button
@@ -803,6 +936,20 @@ export default function Home() {
           50% { opacity: 0.4; }
         }
       `}</style>
+
+      {/* 저장 모달 */}
+      {saveModalTarget && (
+        <SaveModal
+          autoTags={
+            saveModalTarget === "all"
+              ? generateAutoTags(problems.find((p) => p.status === "done")!)
+              : generateAutoTags(problems.find((p) => p.id === saveModalTarget)!)
+          }
+          onSave={handleSaveToLibrary}
+          onClose={() => setSaveModalTarget(null)}
+          saving={savingToLibrary}
+        />
+      )}
     </div>
   );
 }
