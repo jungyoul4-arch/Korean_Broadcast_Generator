@@ -234,6 +234,8 @@ body {
 .katex .mord, .katex .mbin, .katex .mrel,
 .katex .mopen, .katex .mclose, .katex .mpunct,
 .katex .mop, .katex .minner { color: #fff !important; }
+.katex .boxpad { border-color: rgba(255,255,255,0.5) !important; }
+.katex .fbox { border-color: rgba(255,255,255,0.5) !important; }
 </style>
 </head>
 <body>
