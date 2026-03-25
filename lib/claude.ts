@@ -502,14 +502,14 @@ export async function analyzeProblemImage(
     inlineData: { mimeType: mediaType, data: imageBase64 },
   };
 
-  // detectDiagram 제거 — Flash 텍스트 + Pro TikZ 동시 시작
-  // 도형 없으면 Pro가 null 반환 → 무시
-  const tikzTier = usePro ? "pro" : "pro"; // 항상 Pro (정확도 우선)
-  console.log(`Flash(텍스트) + Pro(TikZ) 병렬 시작`);
+  // 텍스트 분석: usePro이면 Pro, 아니면 Flash (cases 검증 실패 시 자동 Pro 재시도)
+  // TikZ 생성: 항상 Pro (정확도 우선)
+  const textTier = usePro ? "pro" : "flash";
+  console.log(`${textTier}(텍스트) + Pro(TikZ) 병렬 시작`);
 
   const [parsed, tikzCode] = await Promise.all([
-    analyzeText(client, imageContent, userMessage),
-    generateTikz(client, imageContent, tikzTier),
+    analyzeText(client, imageContent, userMessage, textTier),
+    generateTikz(client, imageContent, "pro"),
   ]);
 
   const hasDiagram = !!tikzCode;
