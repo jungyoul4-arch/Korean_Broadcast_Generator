@@ -62,6 +62,19 @@ COPY --from=builder /app/node_modules/playwright-core ./node_modules/playwright-
 # public 폴더 복사
 COPY --from=builder /app/public ./public
 
+# data 초기 파일 복사 (Volume 마운트 시 Volume 내용이 우선됨)
+# Volume이 비어있을 때만 초기 데이터로 사용
+COPY --from=builder /app/data ./data-init
+
+# 시작 스크립트: Volume이 비어있으면 초기 데이터 복사 후 서버 시작
+RUN echo '#!/bin/sh\n\
+if [ ! -f /app/data/users.json ]; then\n\
+  echo "Volume empty — copying initial data..."\n\
+  cp -r /app/data-init/* /app/data/ 2>/dev/null || true\n\
+  mkdir -p /app/data/libraries\n\
+fi\n\
+exec node server.js' > /app/start.sh && chmod +x /app/start.sh
+
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+CMD ["/app/start.sh"]
