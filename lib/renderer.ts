@@ -58,8 +58,37 @@ async function renderSingle(
   const page = await context.newPage();
 
   try {
+    // ★ 최종 정규화: JSON 왕복 과정에서 백슬래시가 손실/증가되는 문제를 렌더링 직전에 수리
+    // KaTeX 표준: \command (1개), \\ 줄바꿈 (2개). 그 외 수준은 전부 정규화.
+    const normalizedHtml = html.replace(/\$\$([\s\S]*?)\$\$/g, (_, inner: string) => {
+      let fixed = inner;
+      // Step 1: 2개 이상 연속 백슬래시 + 영문자 → 1개 + 영문자 (명령어 정규화)
+      fixed = fixed.replace(/\\{2,}([a-zA-Z])/g, "\\$1");
+      // Step 2: 3개 이상 연속 백슬래시 + 비영문자/끝 → 2개 (줄바꿈 정규화)
+      fixed = fixed.replace(/\\{3,}(?=[^a-zA-Z]|$)/g, "\\\\");
+      // Step 3: cases 환경 안에서 손실된 줄바꿈 복원
+      // 단일 \ + 공백(줄바꿈이 1개로 줄어든 경우) → \\ (2개로 복원)
+      if (fixed.includes("begin{cases}")) {
+        fixed = fixed.replace(/\\(?!\\)(?=\s)/g, "\\\\");
+      }
+      return `$$${fixed}$$`;
+    });
+
+    // ★ 디버그: 정규화 후 최종 $$ 블록 charCodes 확인
+    const dollarBlock = normalizedHtml.match(/\$\$([\s\S]*?)\$\$/);
+    if (dollarBlock) {
+      const block = dollarBlock[0];
+      console.log("🎭 [RENDERER] 정규화 후 $$ 블록:", JSON.stringify(block));
+      // 줄바꿈(\\) 주변 charCodes 확인
+      const idx3x = block.indexOf("3x");
+      if (idx3x >= 0) {
+        const before3x = block.slice(Math.max(0, idx3x - 5), idx3x);
+        console.log("🎭 [RENDERER] 3x 앞 charCodes:", [...before3x].map(c => c.charCodeAt(0)));
+      }
+    }
+
     // setContent으로 직접 주입 — 파일 I/O 완전 제거
-    await page.setContent(html, { waitUntil: "networkidle" });
+    await page.setContent(normalizedHtml, { waitUntil: "networkidle" });
 
     // KaTeX 렌더링 완료를 동적으로 감지 (고정 5초 대기 제거)
     await page.waitForFunction(
@@ -157,7 +186,17 @@ export async function renderPreview(html: string): Promise<Buffer> {
   const page = await context.newPage();
 
   try {
-    await page.setContent(html, { waitUntil: "networkidle" });
+    // 최종 정규화 (renderSingle과 동일)
+    const normalizedHtml = html.replace(/\$\$([\s\S]*?)\$\$/g, (_, inner: string) => {
+      let fixed = inner;
+      fixed = fixed.replace(/\\{2,}([a-zA-Z])/g, "\\$1");
+      fixed = fixed.replace(/\\{3,}(?=[^a-zA-Z]|$)/g, "\\\\");
+      if (fixed.includes("begin{cases}")) {
+        fixed = fixed.replace(/\\(?!\\)(?=\s)/g, "\\\\");
+      }
+      return `$$${fixed}$$`;
+    });
+    await page.setContent(normalizedHtml, { waitUntil: "networkidle" });
 
     await page.waitForFunction(
       () => {

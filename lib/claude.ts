@@ -79,11 +79,37 @@ const SYSTEM_PROMPT = `당신은 수학 문제 이미지를 분석하여 HTML+La
 - 정렬: \\begin{aligned} ... \\end{aligned}
 - 화살표: \\to (-> 사용 금지!)
 
-## 조건부 함수 (절대 규칙!)
-조건부 정의(f(x)={...})는 반드시 \\begin{cases} 환경을 사용하세요.
-한 줄로 나열하면 안 됩니다! 반드시 줄바꿈(\\\\)으로 구분하세요.
-예시:
-$$g(x) = \\begin{cases} \\frac{1}{2}px^2 + \\frac{1}{2}qx + 5 & (x < 0) \\\\ 5 & (x \\geq 0) \\end{cases}$$
+## 조건부 함수 / 구간별 정의 함수 (★★★ 가장 중요한 절대 규칙 ★★★)
+
+구간별로 다르게 정의된 함수(piecewise function)는 반드시 \\begin{cases}...\\end{cases} 환경을 사용하세요.
+이 규칙을 어기면 KaTeX에서 모든 조건이 한 줄로 나열되어 방송 사고가 발생합니다!
+
+### ❌ 절대 하면 안 되는 것 (한 줄로 나열됨 → 방송 사고!):
+- $$f(x) = \\{ax^2-2 \\quad (x<2) \\quad 3x \\quad (x \\geq 2)\\}$$ ← 중괄호만 사용 금지!
+- $$f(x) = \\left\\{ ax^2-2 \\quad (x<2), \\quad 3x \\quad (x \\geq 2) \\right.$$ ← left/right 금지!
+- $$f(x) = \\left\\{\\begin{array}{l} ... \\end{array}\\right.$$ ← array 환경 금지! cases만!
+- cases 안에서 줄바꿈(\\\\) 없이 한 줄로 쓰기 금지!
+
+### ✅ 반드시 이렇게 (cases 환경 + & 정렬 + \\\\ 줄바꿈):
+
+2개 조건:
+$$f(x) = \\begin{cases} ax^2 - 2 & (x < 2) \\\\ 3x & (x \\geq 2) \\end{cases}$$
+
+3개 조건:
+$$g(x) = \\begin{cases} x+1 & (x < 0) \\\\ x^2 & (0 \\leq x < 1) \\\\ 2x-1 & (x \\geq 1) \\end{cases}$$
+
+분수 포함:
+$$h(t) = \\begin{cases} \\frac{1}{2}pt^2 + \\frac{1}{2}qt + 5 & (t < 0) \\\\ 5 & (t \\geq 0) \\end{cases}$$
+
+절대값 정의:
+$$|x| = \\begin{cases} x & (x \\geq 0) \\\\ -x & (x < 0) \\end{cases}$$
+
+### 규칙 요약:
+- 각 조건의 수식과 조건 사이에 & 사용 (정렬 기호)
+- 각 조건 사이에 \\\\ 사용 (줄바꿈) — 마지막 조건 뒤에는 \\\\ 없음
+- 변수가 x, t, n, k 등 무엇이든 동일하게 cases 사용
+- \\begin{cases} 앞에 = 기호가 와야 함 (함수명 = \\begin{cases}...)
+- 중괄호(\\{, \\left\\{)로 대체하면 KaTeX에서 줄바꿈이 안 됩니다!
 
 ## 수식 주의사항 (절대 지켜야 함!)
 - lim, log, sin, cos, tan 등은 반드시 \\를 붙여야 합니다!
@@ -339,13 +365,118 @@ function fixMathOperators(html: string): string {
  * JSON 파싱 후 \\begin{cases} (이중 백슬래시)가 남아 KaTeX 실패
  */
 function fixDoubleEscapedEnvironments(html: string): string {
-  return html
-    // 수식 안의 이중 이스케이프 수리: \\begin{ → \begin{, \\end{ → \end{
-    .replace(/\\\\begin\{/g, "\\begin{")
-    .replace(/\\\\end\{/g, "\\end{")
-    // 삼중/사중 이스케이프도 정규화
-    .replace(/\\\\\\\\begin\{/g, "\\begin{")
-    .replace(/\\\\\\\\end\{/g, "\\end{");
+  // $$ 블록 안의 백슬래시를 KaTeX 표준으로 일괄 정규화
+  // Gemini가 매번 다른 수준으로 이스케이프하므로, 특정 패턴이 아닌 모든 경우를 처리
+  //
+  // KaTeX 표준:
+  //   \command  = 백슬래시 1개 + 명령어 (예: \begin, \geq, \frac)
+  //   \\        = 백슬래시 2개 (줄바꿈, cases 환경 등)
+  //
+  // 정규화 규칙:
+  //   백슬래시 2개 이상 + 영문자 → 백슬래시 1개 + 영문자 (명령어)
+  //   백슬래시 3개 이상 + 비영문자 → 백슬래시 2개 (줄바꿈)
+  //   백슬래시 정확히 2개 + 비영문자 → 그대로 유지 (이미 올바른 줄바꿈)
+  //   백슬래시 1개 + 영문자 → 그대로 유지 (이미 올바른 명령어)
+  const normalizeMathBlock = (inner: string): string => {
+    let fixed = inner;
+    // 2개 이상 연속 백슬래시 + 영문자 → 1개 백슬래시 + 영문자 (명령어 정규화)
+    fixed = fixed.replace(/\\{2,}([a-zA-Z])/g, "\\$1");
+    // 3개 이상 연속 백슬래시 + 비영문자(또는 끝) → 2개 백슬래시 (줄바꿈 정규화)
+    fixed = fixed.replace(/\\{3,}(?=[^a-zA-Z]|$)/g, "\\\\");
+    return fixed;
+  };
+
+  // 블록 수식 $$...$$ 처리
+  let result = html.replace(/\$\$([\s\S]*?)\$\$/g, (_, inner: string) => {
+    return `$$${normalizeMathBlock(inner)}$$`;
+  });
+
+  // 인라인 수식 $...$ 처리
+  result = result.replace(/(?<!\$)\$(?!\$)((?:[^$\\]|\\.)*?)\$(?!\$)/g, (_, inner: string) => {
+    return `$${normalizeMathBlock(inner)}$`;
+  });
+
+  return result;
+}
+
+/**
+ * 구간별 정의 함수 자동 수정: cases 환경 없이 한 줄로 나열된 경우 → cases로 변환
+ *
+ * 감지 패턴 예:
+ *   $$f(x) = \{ax^2-2 \quad (x < 2) \quad 3x \quad (x \geq 2)\}$$
+ *   $$f(x) = \left\{ ax^2-2 (x<2), 3x (x≥2) \right.$$
+ *
+ * 변환 결과:
+ *   $$f(x) = \begin{cases} ax^2-2 & (x < 2) \\ 3x & (x \geq 2) \end{cases}$$
+ */
+function fixPiecewiseFunctions(html: string): string {
+  console.log("🔍 [DEBUG] fixPiecewiseFunctions 입력:", JSON.stringify(html).slice(0, 500));
+  return html.replace(/\$\$([\s\S]*?)\$\$/g, (match, inner: string) => {
+    // cases가 이미 있으면 건너뛰기
+    if (inner.includes("\\begin{cases}")) {
+      console.log("✅ [DEBUG] cases 이미 존재, 스킵");
+      return match;
+    }
+
+    // 조건 패턴이 2개 이상 있는지 확인: (변수 부등호 값) 형태
+    const condPattern = /\(\s*[a-zA-Z]\s*(?:[<>≤≥]|\\leq|\\geq|\\le|\\ge|\\leqslant|\\geqslant)\s*[^)]*\)/g;
+    const conditions = inner.match(condPattern);
+    console.log("🔍 [DEBUG] $$ 블록 내용:", JSON.stringify(inner).slice(0, 300));
+    console.log("🔍 [DEBUG] 조건 패턴 감지:", conditions);
+    if (!conditions || conditions.length < 2) return match;
+
+    // = \{ 또는 = \left\{ 패턴이 있는지 확인
+    const hasBraceOpen = /=\s*(?:\\left\s*)?\\?\{/.test(inner);
+    console.log("🔍 [DEBUG] 중괄호 열기 감지:", hasBraceOpen, "inner:", JSON.stringify(inner).slice(0, 200));
+    if (!hasBraceOpen) return match;
+
+    console.log("🔧 구간별 함수 자동 수정: cases 환경으로 변환");
+
+    let fixed = inner;
+
+    // Step 1: 여는 중괄호를 \begin{cases}로 교체
+    fixed = fixed.replace(/=\s*\\left\s*\\\{/, "= \\begin{cases}");
+    fixed = fixed.replace(/=\s*\\\{/, "= \\begin{cases}");
+
+    // Step 2: 닫는 중괄호를 \end{cases}로 교체
+    // \right\}, \right., \} 패턴
+    fixed = fixed.replace(/\\right\s*\\\}?\s*$/, "\\end{cases}");
+    fixed = fixed.replace(/\\right\s*\.\s*$/, "\\end{cases}");
+    // 마지막 \} 제거 (cases 닫는 중괄호)
+    if (!fixed.includes("\\end{cases}")) {
+      // 마지막 조건 뒤의 \}를 \end{cases}로 교체
+      const lastCondIdx = fixed.lastIndexOf(conditions[conditions.length - 1]);
+      if (lastCondIdx >= 0) {
+        const afterLastCond = fixed.slice(lastCondIdx + conditions[conditions.length - 1].length);
+        const braceMatch = afterLastCond.match(/\s*\\\}\s*$/);
+        if (braceMatch) {
+          fixed = fixed.slice(0, fixed.length - braceMatch[0].length) + " \\end{cases}";
+        } else {
+          fixed = fixed.trimEnd() + " \\end{cases}";
+        }
+      }
+    }
+
+    // Step 3: 각 조건 앞에 & 추가, 각 조건 뒤에 \\ 추가 (마지막 제외)
+    for (let i = 0; i < conditions.length; i++) {
+      const cond = conditions[i];
+      if (i < conditions.length - 1) {
+        // 중간 조건: & cond \\
+        fixed = fixed.replace(cond, `& ${cond} \\\\`);
+      } else {
+        // 마지막 조건: & cond
+        fixed = fixed.replace(cond, `& ${cond}`);
+      }
+    }
+
+    // Step 4: \quad, 콤마 등 불필요한 구분자 정리
+    fixed = fixed.replace(/\\quad\s*&/g, " &");
+    fixed = fixed.replace(/,\s*&/g, " &");
+    fixed = fixed.replace(/\\\\\s*\\quad/g, "\\\\");
+    fixed = fixed.replace(/\\\\\s*,/g, "\\\\");
+
+    return `$$${fixed}$$`;
+  });
 }
 
 /**
@@ -424,7 +555,20 @@ async function analyzeText(
   const jsonMatch = jsonStr.match(/```json\s*([\s\S]*?)```/);
   if (jsonMatch) jsonStr = jsonMatch[1].trim();
 
+  // ★ 디버그: Gemini 원본 JSON (escapeLatexInJson 적용 전)
+  const casesArea = jsonStr.match(/begin.{0,50}cases/)?.[0];
+  if (casesArea) {
+    console.log("🔬 [DEBUG] Gemini 원본 cases 근처:", JSON.stringify(casesArea));
+    console.log("🔬 [DEBUG] 백슬래시 charCodes:", [...casesArea].map(c => c === '\\' ? '\\' : '').filter(Boolean).length, "개");
+  }
+
   const escaped = escapeLatexInJson(jsonStr);
+
+  // ★ 디버그: escapeLatexInJson 후
+  const casesArea2 = escaped.match(/begin.{0,50}cases/)?.[0];
+  if (casesArea2) {
+    console.log("🔬 [DEBUG] escapeLatex 후 cases 근처:", JSON.stringify(casesArea2));
+  }
 
   let parsed: Record<string, unknown>;
   try {
@@ -437,16 +581,29 @@ async function analyzeText(
     }
   }
 
-  // ★ 검증: 조건부 함수가 있는데 \begin{cases}가 누락되면 Pro로 재시도
-  if (tier === "flash") {
-    const bodyHtml = (parsed.bodyHtml as string) || "";
-    const hasConditionPattern = /\(x\s*[<>≤≥\\leq\\geq\\le\\ge]/.test(bodyHtml);
-    const hasCasesEnv = /\\begin\{cases\}/.test(bodyHtml);
+  // ★ 디버그: Gemini 원본 bodyHtml 출력
+  console.log("📋 [DEBUG] Gemini bodyHtml 원본:", JSON.stringify((parsed.bodyHtml as string) || "").slice(0, 500));
 
-    if (hasConditionPattern && !hasCasesEnv) {
-      console.log("⚠ Flash가 cases 환경 누락 — Pro로 자동 재시도");
-      return analyzeText(client, imageContent, userMessage, "pro");
-    }
+  // ★ 검증: 조건부 함수가 있는데 \begin{cases}가 누락되면 재시도
+  const allHtml = ((parsed.bodyHtml as string) || "") + ((parsed.conditionHtml as string) || "");
+  // 다양한 변수(x,t,n,k 등)와 부등호 패턴 감지
+  const conditionRegex = /\(\s*[a-zA-Z]\s*(?:[<>≤≥]|\\leq|\\geq|\\le|\\ge|\\leqslant|\\geqslant)/;
+  // 중괄호 + 조건이 한 줄로 나열된 패턴 감지
+  const inlineBraceRegex = /\\?\{[^}]*\(\s*[a-zA-Z]\s*[<>≤≥][^}]*\(\s*[a-zA-Z]\s*[<>≤≥]/;
+  const hasConditionPattern = conditionRegex.test(allHtml);
+  const hasInlineBrace = inlineBraceRegex.test(allHtml);
+  const hasCasesEnv = /\\begin\{cases\}/.test(allHtml);
+  const needsCases = hasConditionPattern && !hasCasesEnv;
+  const hasBrokenCases = hasInlineBrace && !hasCasesEnv;
+
+  if (tier === "flash" && (needsCases || hasBrokenCases)) {
+    console.log("⚠ Flash가 cases 환경 누락 — Pro로 자동 재시도");
+    const casesWarning = "\n\n⚠️ 중요: 이 문제에는 구간별 정의 함수가 있습니다. 반드시 \\begin{cases}...\\end{cases} 환경을 사용하세요! \\{ \\}로 감싸거나 한 줄로 나열하면 안 됩니다!";
+    return analyzeText(client, imageContent, userMessage + casesWarning, "pro");
+  }
+
+  if (tier === "pro" && (needsCases || hasBrokenCases)) {
+    console.warn("⚠ Pro도 cases 환경 누락 — 후처리로 자동 수정 시도");
   }
 
   return parsed;
@@ -566,14 +723,23 @@ export async function analyzeProblemImage(
     source: source || undefined,
     headerText: headerText || undefined,
     footerText: footerText || undefined,
-    bodyHtml: fixDoubleEscapedEnvironments(fixAnswerBoxInMath(fixMathOperators(p.bodyHtml || ""))),
+    bodyHtml: fixPiecewiseFunctions(fixDoubleEscapedEnvironments(fixAnswerBoxInMath(fixMathOperators(p.bodyHtml || "")))),
     questionHtml: "",
-    conditionHtml: p.conditionHtml ? fixDoubleEscapedEnvironments(fixAnswerBoxInMath(fixMathOperators(p.conditionHtml))) : undefined,
+    conditionHtml: p.conditionHtml ? fixPiecewiseFunctions(fixDoubleEscapedEnvironments(fixAnswerBoxInMath(fixMathOperators(p.conditionHtml)))) : undefined,
     hasDiagram: !!hasDiagram,
     diagramPngBase64,
     diagramLayout,
     choicesHtml: p.choicesHtml || undefined,
   };
+
+  // 최종 bodyHtml에서 cases 주변 실제 문자열 확인
+  const finalBody = problemData.bodyHtml;
+  const beginIdx = finalBody.indexOf("begin{cases}");
+  if (beginIdx >= 0) {
+    const around = finalBody.slice(Math.max(0, beginIdx - 5), beginIdx + 20);
+    console.log("🔬 [DEBUG] 최종 begin{cases} 주변:", JSON.stringify(around));
+    console.log("🔬 [DEBUG] begin 앞 5글자 charCodes:", [...finalBody.slice(Math.max(0, beginIdx - 5), beginIdx)].map(c => c.charCodeAt(0)));
+  }
 
   const html = generateProblemHtml(problemData);
 
