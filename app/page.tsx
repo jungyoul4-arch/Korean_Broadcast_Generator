@@ -12,6 +12,8 @@ interface ProblemState {
   number: number;
   status: "pending" | "analyzing" | "ready" | "rendering" | "done" | "error";
   errorMessage?: string;
+  itemType: "problem" | "lecture-note";
+  linkedProblemNumber?: number;
   subject: string;
   type: string;
   points: number;
@@ -29,6 +31,7 @@ interface ProblemState {
 }
 
 type AppPhase = "upload" | "analyzing" | "preview" | "rendering" | "done";
+type UploadMode = "problem" | "lecture-note";
 
 export default function Home() {
   const [problems, setProblems] = useState<ProblemState[]>([]);
@@ -39,6 +42,7 @@ export default function Home() {
   const [saveModalTarget, setSaveModalTarget] = useState<"all" | string | null>(null);
   const [savingToLibrary, setSavingToLibrary] = useState(false);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const [uploadMode, setUploadMode] = useState<UploadMode>("problem");
 
   const updateProblem = useCallback(
     (id: string, updates: Partial<ProblemState>) => {
@@ -73,6 +77,7 @@ export default function Home() {
           file,
           number: startNumber + i,
           status: "pending" as const,
+          itemType: uploadMode,
           subject: "",
           type: "",
           points: 0,
@@ -86,7 +91,7 @@ export default function Home() {
         return [...prev, ...newProblems];
       });
     },
-    []
+    [uploadMode]
   );
 
   // 1-1. 개별 문제 삭제 (모든 상태에서 가능)
@@ -446,6 +451,8 @@ export default function Home() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            itemType: prob.itemType,
+            linkedProblemNumber: prob.linkedProblemNumber,
             subject: prob.subject,
             unitName: prob.unitName,
             type: prob.type,
@@ -507,6 +514,40 @@ export default function Home() {
           수학 문제 이미지를 방송용 투명 PNG로 자동 변환
         </p>
       </header>
+
+      {/* 모드 토글: 문제 / 강의노트 */}
+      <div style={{
+        display: "flex",
+        gap: "0",
+        marginBottom: "16px",
+        borderRadius: "10px",
+        overflow: "hidden",
+        border: "1px solid rgba(255,255,255,0.12)",
+      }}>
+        {(["problem", "lecture-note"] as const).map((mode) => (
+          <button
+            key={mode}
+            onClick={() => setUploadMode(mode)}
+            style={{
+              flex: 1,
+              padding: "10px 0",
+              border: "none",
+              background: uploadMode === mode
+                ? mode === "problem"
+                  ? "linear-gradient(135deg, #42a5f5, #1565c0)"
+                  : "linear-gradient(135deg, #ab47bc, #7b1fa2)"
+                : "rgba(255,255,255,0.04)",
+              color: uploadMode === mode ? "#fff" : "rgba(255,255,255,0.5)",
+              fontSize: "14px",
+              fontWeight: uploadMode === mode ? 700 : 500,
+              cursor: "pointer",
+              transition: "all 0.2s",
+            }}
+          >
+            {mode === "problem" ? "문제" : "강의노트"}
+          </button>
+        ))}
+      </div>
 
       {/* 출처 입력 */}
       <div style={{ marginBottom: "16px" }}>
@@ -589,6 +630,22 @@ export default function Home() {
                 pngBase64={prob.pngBase64}
                 contiPngBase64={prob.contiPngBase64}
               />
+              {prob.itemType === "lecture-note" && (
+                <span style={{
+                  position: "absolute",
+                  top: "8px",
+                  left: "8px",
+                  background: "rgba(171,71,188,0.85)",
+                  color: "#fff",
+                  fontSize: "10px",
+                  fontWeight: 700,
+                  padding: "2px 8px",
+                  borderRadius: "6px",
+                  backdropFilter: "blur(4px)",
+                }}>
+                  강의노트{prob.linkedProblemNumber ? ` #${prob.linkedProblemNumber}` : ""}
+                </span>
+              )}
               {/* 문항번호 + 출처 + 머릿말/꼬릿말 입력 (pending 상태에서만) */}
               {prob.status === "pending" && (
                 <div style={{ marginTop: "-1px" }}>
@@ -628,6 +685,28 @@ export default function Home() {
                         outline: "none",
                       }}
                     />
+                    {prob.itemType === "lecture-note" && (
+                      <input
+                        type="number"
+                        value={prob.linkedProblemNumber || ""}
+                        onChange={(e) => updateProblem(prob.id, {
+                          linkedProblemNumber: e.target.value ? parseInt(e.target.value) : undefined,
+                        })}
+                        placeholder="연결 문제#"
+                        style={{
+                          width: "90px",
+                          padding: "8px 10px",
+                          border: "1px solid rgba(171,71,188,0.3)",
+                          borderTop: "none",
+                          borderLeft: "none",
+                          background: "rgba(171,71,188,0.08)",
+                          color: "#ce93d8",
+                          fontSize: "12px",
+                          textAlign: "center",
+                          outline: "none",
+                        }}
+                      />
+                    )}
                   </div>
                   <input
                     type="text"

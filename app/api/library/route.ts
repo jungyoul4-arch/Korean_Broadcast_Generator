@@ -8,6 +8,7 @@ export async function GET(request: NextRequest) {
   if (!session) return NextResponse.json({ error: "로그인 필요" }, { status: 401 });
 
   const { searchParams } = new URL(request.url);
+  const itemTypeParam = searchParams.get("itemType");
   const result = listProblems(session.userId, {
     subject: searchParams.get("subject") || undefined,
     unitName: searchParams.get("unit") || undefined,
@@ -16,6 +17,7 @@ export async function GET(request: NextRequest) {
     search: searchParams.get("search") || undefined,
     difficulty: searchParams.get("difficulty") ? parseInt(searchParams.get("difficulty")!) : undefined,
     ownerId: searchParams.get("owner") || undefined,
+    itemType: itemTypeParam === "problem" || itemTypeParam === "lecture-note" ? itemTypeParam : undefined,
     offset: searchParams.get("offset") ? parseInt(searchParams.get("offset")!) : 0,
     limit: searchParams.get("limit") ? parseInt(searchParams.get("limit")!) : 50,
   });
@@ -35,6 +37,8 @@ export async function POST(request: NextRequest) {
     }
 
     const saved = saveProblem(session.userId, {
+      itemType: body.itemType || "problem",
+      linkedProblemNumber: body.linkedProblemNumber,
       subject: body.subject || "",
       unitName: body.unitName || "",
       type: body.type || "",

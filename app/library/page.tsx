@@ -7,6 +7,8 @@ interface SavedProblem {
   createdAt: string;
   ownerId: string;
   ownerName?: string;
+  itemType?: "problem" | "lecture-note";
+  linkedProblemNumber?: number;
   subject: string;
   unitName: string;
   type: string;
@@ -42,6 +44,7 @@ export default function LibraryPage() {
   const [difficulty, setDifficulty] = useState("");
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
+  const [itemType, setItemType] = useState<"" | "problem" | "lecture-note">("");
 
   // 상세 보기
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -59,13 +62,14 @@ export default function LibraryPage() {
     if (tag) params.set("tag", tag);
     if (difficulty) params.set("difficulty", difficulty);
     if (search) params.set("search", search);
+    if (itemType) params.set("itemType", itemType);
 
     const res = await fetch(`/api/library?${params}`);
     if (res.ok) {
       setData(await res.json());
     }
     setLoading(false);
-  }, [subject, unit, tag, difficulty, search]);
+  }, [subject, unit, tag, difficulty, search, itemType]);
 
   useEffect(() => {
     fetchLibrary();
@@ -147,9 +151,47 @@ export default function LibraryPage() {
           문제 라이브러리
         </h1>
         <p style={{ fontSize: "15px", color: "rgba(255,255,255,0.5)" }}>
-          {data ? `총 ${data.total}개 문제` : "로딩 중..."}
+          {data ? `총 ${data.total}개 ${itemType === "lecture-note" ? "강의노트" : itemType === "problem" ? "문제" : "항목"}` : "로딩 중..."}
         </p>
       </header>
+
+      {/* 유형 탭: 전체 / 문제 / 강의노트 */}
+      <div style={{
+        display: "flex",
+        gap: "0",
+        marginBottom: "16px",
+        borderRadius: "10px",
+        overflow: "hidden",
+        border: "1px solid rgba(255,255,255,0.12)",
+      }}>
+        {([
+          { value: "" as const, label: "전체" },
+          { value: "problem" as const, label: "문제" },
+          { value: "lecture-note" as const, label: "강의노트" },
+        ]).map((tab) => (
+          <button
+            key={tab.value}
+            onClick={() => setItemType(tab.value)}
+            style={{
+              flex: 1,
+              padding: "9px 0",
+              border: "none",
+              background: itemType === tab.value
+                ? tab.value === "lecture-note"
+                  ? "linear-gradient(135deg, #ab47bc, #7b1fa2)"
+                  : "linear-gradient(135deg, #42a5f5, #1565c0)"
+                : "rgba(255,255,255,0.04)",
+              color: itemType === tab.value ? "#fff" : "rgba(255,255,255,0.5)",
+              fontSize: "13px",
+              fontWeight: itemType === tab.value ? 700 : 500,
+              cursor: "pointer",
+              transition: "all 0.2s",
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
       {/* 필터 바 */}
       <div
@@ -370,6 +412,20 @@ export default function LibraryPage() {
                     flexWrap: "wrap",
                   }}
                 >
+                  {(prob.itemType || "problem") === "lecture-note" && (
+                    <span
+                      style={{
+                        fontSize: "10px",
+                        padding: "2px 8px",
+                        borderRadius: "10px",
+                        background: "rgba(171,71,188,0.2)",
+                        color: "#ce93d8",
+                        fontWeight: 700,
+                      }}
+                    >
+                      강의노트{prob.linkedProblemNumber ? ` #${prob.linkedProblemNumber}` : ""}
+                    </span>
+                  )}
                   <span
                     style={{
                       fontSize: "12px",

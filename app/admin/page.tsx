@@ -302,13 +302,18 @@ export default function AdminPage() {
             </select>
           </div>
 
-          {(libraryData.problems as Array<{ id: string; subject: string; unitName: string; source: string; ownerName: string; createdAt: string; hasProblemPng?: boolean; hasContiPng?: boolean }>).map((p) => (
+          {(libraryData.problems as Array<{ id: string; itemType?: string; linkedProblemNumber?: number; subject: string; unitName: string; source: string; ownerName: string; createdAt: string; hasProblemPng?: boolean; hasContiPng?: boolean }>).map((p) => (
             <div key={p.id} style={{ marginBottom: "6px" }}>
               <div
                 style={{ ...rowStyle, cursor: "pointer" }}
                 onClick={() => setSelectedProbId(selectedProbId === p.id ? null : p.id)}
               >
                 <div style={{ flex: 1, display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+                  {(p.itemType || "problem") === "lecture-note" && (
+                    <span style={{ fontSize: "10px", padding: "2px 8px", borderRadius: "8px", background: "rgba(171,71,188,0.2)", color: "#ce93d8", fontWeight: 700 }}>
+                      노트{p.linkedProblemNumber ? ` #${p.linkedProblemNumber}` : ""}
+                    </span>
+                  )}
                   <span style={{ fontSize: "12px", padding: "2px 8px", borderRadius: "8px", background: "rgba(100,181,246,0.15)", color: "#90caf9" }}>
                     {p.subject}
                   </span>

@@ -15,6 +15,9 @@ export interface SavedProblem {
   ownerId: string;
   ownerName?: string;
 
+  itemType: "problem" | "lecture-note";
+  linkedProblemNumber?: number;
+
   subject: string;
   unitName: string;
   type: string;
@@ -40,6 +43,8 @@ export interface LibraryIndex {
 }
 
 export interface SaveProblemInput {
+  itemType?: "problem" | "lecture-note";
+  linkedProblemNumber?: number;
   subject: string;
   unitName: string;
   type: string;
@@ -65,6 +70,7 @@ export interface LibraryFilter {
   search?: string;
   difficulty?: number;
   ownerId?: string;
+  itemType?: "problem" | "lecture-note";
   offset?: number;
   limit?: number;
 }
@@ -181,6 +187,7 @@ export function saveProblem(userId: string, input: SaveProblemInput): SavedProbl
     fs.writeFileSync(path.join(problemDir, "conti.html"), input.contiHtml, "utf-8");
   }
 
+  const itemType = input.itemType || "problem";
   const autoTags = generateAutoTags({
     subject: input.subject,
     unitName: input.unitName,
@@ -190,6 +197,7 @@ export function saveProblem(userId: string, input: SaveProblemInput): SavedProbl
     source: input.source,
     hasDiagram: input.html?.includes("diagram") || false,
   });
+  if (itemType === "lecture-note") autoTags.push("강의노트");
   const allTags = [...new Set([...autoTags, ...(input.tags || [])])];
 
   const user = getUserById(userId);
@@ -198,6 +206,8 @@ export function saveProblem(userId: string, input: SaveProblemInput): SavedProbl
     createdAt: new Date().toISOString(),
     ownerId: userId,
     ownerName: user?.displayName,
+    itemType,
+    linkedProblemNumber: input.linkedProblemNumber,
     subject: input.subject || "",
     unitName: input.unitName || "",
     type: input.type || "",
@@ -263,6 +273,7 @@ export function listProblems(userId: string, filter: LibraryFilter = {}): {
   let results = mergeLibraries(userIds);
 
   // 필터링
+  if (filter.itemType) results = results.filter((p) => (p.itemType || "problem") === filter.itemType);
   if (filter.subject) results = results.filter((p) => p.subject === filter.subject);
   if (filter.unitName) results = results.filter((p) => p.unitName === filter.unitName);
   if (filter.type) results = results.filter((p) => p.type === filter.type);
@@ -311,6 +322,7 @@ export function listAllProblems(filter: LibraryFilter = {}): ReturnType<typeof l
 
   let results = mergeLibraries(allUserIds);
 
+  if (filter.itemType) results = results.filter((p) => (p.itemType || "problem") === filter.itemType);
   if (filter.subject) results = results.filter((p) => p.subject === filter.subject);
   if (filter.unitName) results = results.filter((p) => p.unitName === filter.unitName);
   if (filter.type) results = results.filter((p) => p.type === filter.type);
