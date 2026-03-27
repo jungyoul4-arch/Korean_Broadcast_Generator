@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, useRef } from "react";
+import { useCallback, useState, useRef, useEffect } from "react";
 
 interface DropZoneProps {
   onFilesSelected: (files: File[]) => void;
@@ -10,7 +10,37 @@ interface DropZoneProps {
 
 export default function DropZone({ onFilesSelected, disabled, compact }: DropZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
+  const [pasteFlash, setPasteFlash] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Ctrl+V / Cmd+V 붙여넣기로 이미지 업로드
+  useEffect(() => {
+    if (disabled) return;
+
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      const imageFiles: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) imageFiles.push(file);
+        }
+      }
+
+      if (imageFiles.length > 0) {
+        e.preventDefault();
+        onFilesSelected(imageFiles);
+        setPasteFlash(true);
+        setTimeout(() => setPasteFlash(false), 600);
+      }
+    };
+
+    document.addEventListener("paste", handlePaste);
+    return () => document.removeEventListener("paste", handlePaste);
+  }, [onFilesSelected, disabled]);
 
   const handleDrag = useCallback(
     (e: React.DragEvent) => {
@@ -62,7 +92,7 @@ export default function DropZone({ onFilesSelected, disabled, compact }: DropZon
       onDrop={handleDrop}
       onClick={handleClick}
       style={{
-        border: `2px dashed ${isDragging ? "#f9a825" : "rgba(255,255,255,0.2)"}`,
+        border: `2px dashed ${pasteFlash ? "#66bb6a" : isDragging ? "#f9a825" : "rgba(255,255,255,0.2)"}`,
         borderRadius: "16px",
         padding: compact ? "24px 40px" : "60px 40px",
         textAlign: "center",
@@ -104,7 +134,7 @@ export default function DropZone({ onFilesSelected, disabled, compact }: DropZon
       {!compact && (
         <>
           <p style={{ fontSize: "14px", color: "rgba(255,255,255,0.5)" }}>
-            또는 클릭하여 파일 선택 (PNG, JPG, WebP)
+            클릭하여 파일 선택 또는 <span style={{ color: "#81c784", fontWeight: 600 }}>Ctrl+V</span>로 붙여넣기
           </p>
           <p
             style={{
@@ -113,7 +143,7 @@ export default function DropZone({ onFilesSelected, disabled, compact }: DropZon
               marginTop: "8px",
             }}
           >
-            여러 장을 동시에 올리면 병렬로 처리됩니다
+            PNG, JPG, WebP | 여러 장 동시 업로드 가능
           </p>
         </>
       )}
