@@ -511,6 +511,38 @@ export default function LibraryPage() {
                   }}
                   onClick={(e) => e.stopPropagation()}
                 >
+                  {/* 문제 이미지 미리보기 */}
+                  {prob.hasProblemPng && (
+                    <div style={{
+                      background: "#0d3b2e",
+                      borderRadius: "8px",
+                      padding: "12px",
+                      display: "flex",
+                      justifyContent: "center",
+                    }}>
+                      <img
+                        src={`/api/library/${prob.id}?file=problem`}
+                        alt={`문제 ${prob.source}`}
+                        style={{ maxWidth: "100%", maxHeight: "400px", objectFit: "contain" }}
+                      />
+                    </div>
+                  )}
+                  {prob.hasContiPng && (
+                    <div style={{
+                      background: "#1a1a2e",
+                      borderRadius: "8px",
+                      padding: "12px",
+                      display: "flex",
+                      justifyContent: "center",
+                    }}>
+                      <img
+                        src={`/api/library/${prob.id}?file=conti`}
+                        alt={`콘티 ${prob.source}`}
+                        style={{ maxWidth: "100%", maxHeight: "400px", objectFit: "contain" }}
+                      />
+                    </div>
+                  )}
+
                   {/* 태그 편집 */}
                   {editingTags === prob.id ? (
                     <div>

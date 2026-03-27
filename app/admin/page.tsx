@@ -36,6 +36,7 @@ export default function AdminPage() {
 
   // 라이브러리 필터
   const [libOwner, setLibOwner] = useState("");
+  const [selectedProbId, setSelectedProbId] = useState<string | null>(null);
 
   const fetchUsers = useCallback(async () => {
     const r = await fetch("/api/admin/users");
@@ -301,27 +302,42 @@ export default function AdminPage() {
             </select>
           </div>
 
-          {(libraryData.problems as Array<{ id: string; subject: string; unitName: string; source: string; ownerName: string; createdAt: string }>).map((p) => (
-            <div key={p.id} style={{ ...rowStyle, marginBottom: "6px" }}>
-              <div style={{ flex: 1, display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
-                <span style={{ fontSize: "12px", padding: "2px 8px", borderRadius: "8px", background: "rgba(100,181,246,0.15)", color: "#90caf9" }}>
-                  {p.subject}
-                </span>
-                {p.unitName && (
-                  <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.4)" }}>{p.unitName}</span>
-                )}
-                {p.source && (
-                  <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.3)" }}>{p.source}</span>
-                )}
+          {(libraryData.problems as Array<{ id: string; subject: string; unitName: string; source: string; ownerName: string; createdAt: string; hasProblemPng?: boolean; hasContiPng?: boolean }>).map((p) => (
+            <div key={p.id} style={{ marginBottom: "6px" }}>
+              <div
+                style={{ ...rowStyle, cursor: "pointer" }}
+                onClick={() => setSelectedProbId(selectedProbId === p.id ? null : p.id)}
+              >
+                <div style={{ flex: 1, display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "12px", padding: "2px 8px", borderRadius: "8px", background: "rgba(100,181,246,0.15)", color: "#90caf9" }}>
+                    {p.subject}
+                  </span>
+                  {p.unitName && (
+                    <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.4)" }}>{p.unitName}</span>
+                  )}
+                  {p.source && (
+                    <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.3)" }}>{p.source}</span>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  <span style={{ fontSize: "11px", padding: "2px 8px", borderRadius: "8px", background: "rgba(129,199,132,0.1)", color: "#a5d6a7" }}>
+                    {p.ownerName}
+                  </span>
+                  <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.2)" }}>
+                    {new Date(p.createdAt).toLocaleDateString("ko-KR")}
+                  </span>
+                </div>
               </div>
-              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                <span style={{ fontSize: "11px", padding: "2px 8px", borderRadius: "8px", background: "rgba(129,199,132,0.1)", color: "#a5d6a7" }}>
-                  {p.ownerName}
-                </span>
-                <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.2)" }}>
-                  {new Date(p.createdAt).toLocaleDateString("ko-KR")}
-                </span>
-              </div>
+              {selectedProbId === p.id && (
+                <div style={{ background: "#0d3b2e", borderRadius: "0 0 8px 8px", padding: "12px", display: "flex", justifyContent: "center" }}>
+                  <img
+                    src={`/api/library/${p.id}?file=problem`}
+                    alt={`문제 ${p.source}`}
+                    style={{ maxWidth: "100%", maxHeight: "500px", objectFit: "contain" }}
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                  />
+                </div>
+              )}
             </div>
           ))}
 
