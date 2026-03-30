@@ -7,6 +7,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const items: Array<{ html: string; number: number }> = body.items;
+    const omitBackground: boolean = body.omitBackground !== false; // default true (투명)
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return new Response(
@@ -20,7 +21,7 @@ export async function POST(request: NextRequest) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          await renderMultipleStreaming(items, (result) => {
+          await renderMultipleStreaming(items, omitBackground, (result) => {
             const data = JSON.stringify({
               number: result.number,
               pngBase64: result.pngBuffer.toString("base64"),

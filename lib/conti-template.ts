@@ -1,8 +1,19 @@
 /**
  * 콘티 HTML 템플릿 — EBS 방송 품질 디자인
- * 투명 배경 | Q 뱃지 강조 | 넉넉한 필기 공간 | 세련된 개념 안정화
+ * ✅ 배경 텍스처 + 과목별 색상 + 서체 혼용 + 하단 자막 바
  */
 import type { ContiData } from "./conti";
+import type { RenderOptions } from "./template";
+import {
+  type BackgroundPreset,
+  type SubjectTheme,
+  FONT_SYSTEM,
+  getSubjectTheme,
+  getBackgroundCSS,
+  generateLowerThirdHtml,
+  getTextColorOverrides,
+  DEFAULT_THEME,
+} from "./theme";
 
 export interface ContiTemplateOptions {
   problemNumber: number;
@@ -20,11 +31,26 @@ const Q_COLORS = [
 
 export function generateContiHtml(
   conti: ContiData,
-  options: ContiTemplateOptions
+  options: ContiTemplateOptions,
+  renderOptions?: RenderOptions,
 ): string {
+  const bg = renderOptions?.background || "transparent";
+  const theme = getSubjectTheme(options.subject || "");
+  const bgConfig = getBackgroundCSS(bg, theme);
+  const isDark = bgConfig.isDark;
+
   const sourceBlock = options.source
     ? `<div class="source-tag">${options.source}</div>`
     : "";
+
+  const showLT = renderOptions?.showLowerThird !== false && bg !== "transparent";
+  const lowerThirdBlock = showLT
+    ? generateLowerThirdHtml({
+        left: [options.source, options.subject].filter(Boolean).join(' | '),
+        center: options.unitName || '콘티',
+        right: `${options.problemNumber}번`,
+      }, theme, isDark)
+    : '';
 
   const questionsHtml = conti.questions
     .map((q, i) => {
@@ -60,36 +86,41 @@ export function generateContiHtml(
 <html>
 <head>
 <meta charset="utf-8">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+${FONT_SYSTEM.imports}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
-  font-family: 'Noto Sans KR', sans-serif;
-  color: #fff;
+  font-family: ${FONT_SYSTEM.heading};
+  color: ${bgConfig.textColor};
   line-height: 1.85;
   -webkit-font-smoothing: antialiased;
+  ${bgConfig.css}
+  position: relative;
+  min-height: 100vh;
 }
+${bgConfig.overlayBefore ? `body::before { ${bgConfig.overlayBefore} }` : ''}
 
 .problem-container {
-  padding: 36px 44px 44px;
+  padding: 36px 44px ${showLT ? '56px' : '44px'};
   max-width: 760px;
   position: relative;
+  z-index: 1;
 }
 
 .source-tag {
   position: absolute;
   top: 14px;
   right: 20px;
+  font-family: ${FONT_SYSTEM.heading};
   font-size: 13px;
-  color: rgba(255,255,255,0.4);
+  color: ${isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.3)'};
   font-weight: 400;
 }
 
-/* ─── 헤더: 번호만, 태그 없음 ─── */
+/* ─── 헤더 ─── */
 .conti-header {
   display: flex;
   align-items: center;
@@ -103,30 +134,28 @@ body {
   height: 48px;
   padding: 0 20px;
   border-radius: 14px;
-  background: linear-gradient(135deg, #7c4dff 0%, #536dfe 100%);
+  background: ${theme.gradient};
   color: #fff;
+  font-family: ${FONT_SYSTEM.accent};
   font-size: 19px;
-  font-weight: 900;
+  font-weight: 400;
   letter-spacing: -0.3px;
-  box-shadow: 0 6px 20px rgba(124,77,255,0.35);
+  box-shadow: 0 6px 20px rgba(${theme.primaryRgb},0.35);
 }
 .conti-label {
+  font-family: ${FONT_SYSTEM.heading};
   font-size: 14px;
   font-weight: 500;
-  color: rgba(255,255,255,0.35);
+  color: ${isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)'};
   letter-spacing: 2px;
   text-transform: uppercase;
 }
 
-/* ─── 질문 영역 ─── */
+/* ─── 질문 ─── */
 .questions-section {
   margin-bottom: 32px;
 }
-
 .question-block {
-  margin-bottom: 0;
-}
-.question-block:last-child {
   margin-bottom: 0;
 }
 .question-block:last-child .writing-space {
@@ -147,27 +176,29 @@ body {
   height: 52px;
   border-radius: 14px;
   color: #fff;
+  font-family: ${FONT_SYSTEM.accent};
   font-size: 20px;
-  font-weight: 900;
+  font-weight: 400;
   letter-spacing: -0.5px;
   margin-top: 2px;
 }
 .q-text {
+  font-family: ${FONT_SYSTEM.body};
   font-size: 19px;
   font-weight: 400;
   line-height: 1.9;
   padding-top: 12px;
-  color: rgba(255,255,255,0.92);
+  color: ${isDark ? 'rgba(255,255,255,0.92)' : 'rgba(0,0,0,0.82)'};
 }
 
-/* ─── 필기 공간: 넉넉하게 ─── */
+/* ─── 필기 공간 ─── */
 .writing-space {
   height: 140px;
   margin: 16px 0 28px 0;
-  border: 1.5px dashed rgba(255,255,255,0.07);
+  border: 1.5px dashed ${isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.08)'};
   border-radius: 10px;
   position: relative;
-  background: rgba(255,255,255,0.015);
+  background: ${isDark ? 'rgba(255,255,255,0.015)' : 'rgba(0,0,0,0.015)'};
 }
 .writing-lines {
   position: absolute;
@@ -178,44 +209,47 @@ body {
 }
 .writing-line {
   height: 0;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
+  border-bottom: 1px solid ${isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.05)'};
 }
 
-/* ─── 개념 안정화: EBS 프리미엄 스타일 ─── */
+/* ─── 개념 안정화 (과목 테마색 반영) ─── */
 .concepts-section {
-  border: 1.5px solid rgba(74,138,106,0.4);
+  border: 1.5px solid rgba(${theme.primaryRgb},0.3);
   border-radius: 16px;
   overflow: hidden;
-  background: rgba(74,138,106,0.04);
+  background: rgba(${theme.primaryRgb},0.03);
 }
 .concepts-header {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 16px 28px;
-  border-bottom: 1px solid rgba(74,138,106,0.2);
-  background: rgba(74,138,106,0.08);
+  border-bottom: 1px solid rgba(${theme.primaryRgb},0.15);
+  background: rgba(${theme.primaryRgb},0.06);
 }
 .concepts-icon {
   width: 32px;
   height: 32px;
   border-radius: 8px;
-  background: linear-gradient(135deg, #66bb6a, #2e7d32);
+  background: ${theme.gradient};
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 16px;
-  box-shadow: 0 4px 12px rgba(102,187,106,0.3);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(${theme.primaryRgb},0.3);
 }
 .concepts-title {
+  font-family: ${FONT_SYSTEM.heading};
   font-size: 15px;
   font-weight: 700;
-  color: rgba(165,214,167,0.9);
+  color: ${theme.accent};
   letter-spacing: 0.5px;
 }
 .concepts-subtitle {
+  font-family: ${FONT_SYSTEM.heading};
   font-size: 11px;
-  color: rgba(255,255,255,0.3);
+  color: ${isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)'};
   margin-left: auto;
   font-weight: 400;
 }
@@ -228,7 +262,7 @@ body {
   align-items: flex-start;
   gap: 14px;
   padding: 12px 0;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
+  border-bottom: 1px solid ${isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'};
 }
 .concept-row:last-child {
   border-bottom: none;
@@ -242,25 +276,33 @@ body {
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  background: rgba(102,187,106,0.15);
-  border: 1px solid rgba(102,187,106,0.25);
-  color: #a5d6a7;
+  background: rgba(${theme.primaryRgb},0.15);
+  border: 1px solid rgba(${theme.primaryRgb},0.25);
+  color: ${theme.accent};
+  font-family: ${FONT_SYSTEM.heading};
   font-size: 13px;
   font-weight: 800;
   margin-top: 3px;
 }
 .concept-text {
+  font-family: ${FONT_SYSTEM.body};
   font-size: 18px;
   font-weight: 400;
   line-height: 2;
-  color: rgba(255,255,255,0.88);
+  color: ${isDark ? 'rgba(255,255,255,0.88)' : 'rgba(0,0,0,0.78)'};
 }
 
-/* ─── KaTeX 흰색 ─── */
+/* ─── KaTeX ─── */
+${isDark ? `
 .katex, .katex * { color: #fff !important; }
 .katex .mord, .katex .mbin, .katex .mrel,
 .katex .mopen, .katex .mclose, .katex .mpunct,
 .katex .mop, .katex .minner { color: #fff !important; }
+` : `
+.katex, .katex * { color: #1a1a1a !important; }
+`}
+
+${getTextColorOverrides(isDark)}
 </style>
 </head>
 <body>
@@ -287,6 +329,8 @@ body {
     </div>
   </div>
 </div>
+
+${lowerThirdBlock}
 
 <script>
 document.addEventListener("DOMContentLoaded", function() {

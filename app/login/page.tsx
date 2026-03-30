@@ -68,7 +68,7 @@ export default function LoginPage() {
             WebkitTextFillColor: "transparent",
           }}
         >
-          Math Broadcast
+          Korean Broadcast
         </h1>
         <p
           style={{

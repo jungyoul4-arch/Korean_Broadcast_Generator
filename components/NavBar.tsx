@@ -73,7 +73,7 @@ export default function NavBar() {
               WebkitTextFillColor: "transparent",
             }}
           >
-            MBG
+            KBG
           </Link>
 
           <div style={{ display: "flex", gap: "4px" }}>

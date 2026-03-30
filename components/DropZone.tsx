@@ -6,9 +6,10 @@ interface DropZoneProps {
   onFilesSelected: (files: File[]) => void;
   disabled?: boolean;
   compact?: boolean;
+  label?: string;
 }
 
-export default function DropZone({ onFilesSelected, disabled, compact }: DropZoneProps) {
+export default function DropZone({ onFilesSelected, disabled, compact, label }: DropZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [pasteFlash, setPasteFlash] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -128,8 +129,8 @@ export default function DropZone({ onFilesSelected, disabled, compact }: DropZon
         {isDragging
           ? "여기에 놓으세요"
           : compact
-            ? "+ 문제 이미지 추가 (드래그 또는 클릭)"
-            : "수학 문제 이미지를 드래그 & 드롭"}
+            ? `+ ${label || "문제 이미지"} 추가 (드래그 또는 클릭)`
+            : `${label || "국어/EBS 문제 이미지"}를 드래그 & 드롭`}
       </p>
       {!compact && (
         <>

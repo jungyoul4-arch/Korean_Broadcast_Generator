@@ -33,11 +33,15 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    "/tmp/.next-kbg/types/**/*.ts",
+    "/tmp/.next-kbg/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",
     "scripts",
-    "output"
+    "output",
+    "app 2",
+    "references 2"
   ]
 }

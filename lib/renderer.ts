@@ -49,7 +49,8 @@ export interface RenderResult {
 async function renderSingle(
   browser: Browser,
   html: string,
-  number: number
+  number: number,
+  omitBackground: boolean = true
 ): Promise<RenderResult> {
   const context = await browser.newContext({
     viewport: { width: 1200, height: 800 },
@@ -117,8 +118,11 @@ async function renderSingle(
     }
 
     const box = await container.boundingBox();
-    const pngBuffer = (await container.screenshot({
-      omitBackground: true,
+    // 배경이 투명이 아닌 경우 전체 페이지를 캡처 (배경 포함)
+    const captureTarget = omitBackground ? container : page;
+    const pngBuffer = (await captureTarget.screenshot({
+      omitBackground,
+      ...(omitBackground ? {} : { fullPage: true }),
     })) as Buffer;
 
     return {
@@ -137,7 +141,8 @@ async function renderSingle(
  * 싱글턴 브라우저 재사용 — launch 오버헤드 0
  */
 export async function renderMultiple(
-  items: Array<{ html: string; number: number }>
+  items: Array<{ html: string; number: number }>,
+  omitBackground: boolean = true
 ): Promise<RenderResult[]> {
   const browser = await getBrowser();
   const results: RenderResult[] = [];
@@ -145,7 +150,7 @@ export async function renderMultiple(
   for (let i = 0; i < items.length; i += MAX_CONCURRENT) {
     const chunk = items.slice(i, i + MAX_CONCURRENT);
     const chunkResults = await Promise.all(
-      chunk.map((item) => renderSingle(browser, item.html, item.number))
+      chunk.map((item) => renderSingle(browser, item.html, item.number, omitBackground))
     );
     results.push(...chunkResults);
   }
@@ -158,6 +163,7 @@ export async function renderMultiple(
  */
 export async function renderMultipleStreaming(
   items: Array<{ html: string; number: number }>,
+  omitBackground: boolean = true,
   onResult: (result: RenderResult) => void
 ): Promise<void> {
   const browser = await getBrowser();
@@ -165,7 +171,7 @@ export async function renderMultipleStreaming(
   for (let i = 0; i < items.length; i += MAX_CONCURRENT) {
     const chunk = items.slice(i, i + MAX_CONCURRENT);
     const chunkResults = await Promise.all(
-      chunk.map((item) => renderSingle(browser, item.html, item.number))
+      chunk.map((item) => renderSingle(browser, item.html, item.number, omitBackground))
     );
     for (const result of chunkResults) {
       onResult(result);

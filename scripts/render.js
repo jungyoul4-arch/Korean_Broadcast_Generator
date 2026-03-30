@@ -1,5 +1,5 @@
 /**
- * Math Broadcast Generator — Renderer
+ * Korean Broadcast Generator — Renderer
  *
  * HTML 파일을 Playwright로 열어 투명 배경 PNG로 캡처합니다.
  *

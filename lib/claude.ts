@@ -1,9 +1,9 @@
 /**
- * Gemini API 연동 — 수학 문제 이미지 분석 + HTML/TikZ 생성
+ * Gemini API 연동 — 국어/EBS 문제 이미지 분석 + HTML 생성
  * gemini-3.1-pro 사용
  */
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { generateProblemHtml, type ProblemData } from "./template";
+import { generateProblemHtml, type ProblemData, type RenderOptions } from "./template";
 import { renderTikzToPng } from "./tikz-renderer";
 
 function getClient() {
@@ -26,14 +26,14 @@ function getClient() {
   return new GoogleGenerativeAI(key);
 }
 
-const SYSTEM_PROMPT = `당신은 수학 문제 이미지를 분석하여 HTML+LaTeX 코드로 변환하는 전문가입니다.
+const SYSTEM_PROMPT = `당신은 국어 문제(수능, 모의고사, EBS 연계 교재) 이미지를 분석하여 HTML 코드로 변환하는 전문가입니다.
 
 ## 작업
-사용자가 수학 문제 스크린샷을 보내면:
-1. 문제 텍스트를 정확하게 추출합니다
-2. 수식은 $...$와 $$...$$ 형태의 LaTeX 인라인/블록으로 변환합니다 (KaTeX에서 렌더링)
-3. 한글 텍스트는 그대로 HTML로 씁니다
-4. 도형이 있으면 diagramTikz 필드에 TikZ 코드를 생성합니다
+사용자가 국어 문제 스크린샷을 보내면:
+1. 지문(제시문)과 문제 텍스트를 정확하게 추출합니다
+2. 한글 텍스트는 그대로 HTML로 씁니다
+3. 시, 소설, 비문학 지문은 원본의 줄바꿈과 문단 구조를 충실히 유지합니다
+4. 보기(ㄱ, ㄴ, ㄷ 등)나 <보기> 박스가 있으면 conditionHtml에 넣습니다
 
 ## 응답 형식
 반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트를 추가하지 마세요.
@@ -41,231 +41,106 @@ const SYSTEM_PROMPT = `당신은 수학 문제 이미지를 분석하여 HTML+La
 \`\`\`json
 {
   "number": 1,
-  "subject": "미적분",
-  "type": "주관식",
-  "points": 4,
-  "difficulty": 4,
-  "unitName": "수열의 극한",
+  "subject": "독서",
+  "type": "객관식",
+  "points": 3,
+  "difficulty": 3,
+  "unitName": "인문",
   "hasDiagram": false,
   "diagramTikz": null,
-  "bodyHtml": "HTML+LaTeX 본문 (구하고자 하는 것 반드시 포함!)",
+  "bodyHtml": "HTML 본문 (지문 + 문제 텍스트, 질문 반드시 포함!)",
   "questionHtml": null,
-  "conditionHtml": "박스 안의 조건부 (원본에 박스가 있는 경우만, 없으면 null)",
-  "choicesHtml": null
+  "conditionHtml": "<보기> 박스 내용 (있는 경우만, 없으면 null)",
+  "choicesHtml": "<div class='choice-item'>① 첫 번째 선지</div><div class='choice-item'>② 두 번째 선지</div>..."
 }
 \`\`\`
 
 ## 난이도 판단 기준
-- difficulty 1: 교과서 기본 (2점 문제, 단순 계산)
-- difficulty 2: 기본 응용 (3점 쉬운 문제)
-- difficulty 3: 표준 (3점 보통, 4점 쉬운)
-- difficulty 4: 준킬러 (4점 어려운, 수능 21번급)
-- difficulty 5: 킬러 (수능 30번, 최고난도)
-
-## 수식 규칙 (KaTeX용)
-- 인라인 수식: $수식$ (한글 문장 속에 수식)
-- 블록 수식: $$수식$$ (독립된 수식 줄)
-- 분수: \\frac{a}{b}
-- 적분: \\int_{a}^{b}
-- 극한: \\lim_{x \\to a} (반드시 \\lim 사용!)
-- displaystyle 극한: \\displaystyle\\lim_{n \\to \\infty}
-- 오버라인: \\overline{AB}
-- 루트: \\sqrt{x}
-- 로그: \\log, \\log_{a} (반드시 \\log 사용!)
-- 삼각함수: \\sin, \\cos, \\tan (반드시 백슬래시!)
-- 시그마: \\sum_{k=1}^{n}
-- 조합: \\binom{n}{r} 또는 {}_{n}\\mathrm{C}_{r}
-- 조건부: \\begin{cases} ... \\end{cases} (조건부 함수 필수!)
-- 정렬: \\begin{aligned} ... \\end{aligned}
-- 화살표: \\to (-> 사용 금지!)
-
-## 조건부 함수 / 구간별 정의 함수 (★★★ 가장 중요한 절대 규칙 ★★★)
-
-구간별로 다르게 정의된 함수(piecewise function)는 반드시 \\begin{cases}...\\end{cases} 환경을 사용하세요.
-이 규칙을 어기면 KaTeX에서 모든 조건이 한 줄로 나열되어 방송 사고가 발생합니다!
-
-### ❌ 절대 하면 안 되는 것 (한 줄로 나열됨 → 방송 사고!):
-- $$f(x) = \\{ax^2-2 \\quad (x<2) \\quad 3x \\quad (x \\geq 2)\\}$$ ← 중괄호만 사용 금지!
-- $$f(x) = \\left\\{ ax^2-2 \\quad (x<2), \\quad 3x \\quad (x \\geq 2) \\right.$$ ← left/right 금지!
-- $$f(x) = \\left\\{\\begin{array}{l} ... \\end{array}\\right.$$ ← array 환경 금지! cases만!
-- cases 안에서 줄바꿈(\\\\) 없이 한 줄로 쓰기 금지!
-
-### ✅ 반드시 이렇게 (cases 환경 + & 정렬 + \\\\ 줄바꿈):
-
-2개 조건:
-$$f(x) = \\begin{cases} ax^2 - 2 & (x < 2) \\\\ 3x & (x \\geq 2) \\end{cases}$$
-
-3개 조건:
-$$g(x) = \\begin{cases} x+1 & (x < 0) \\\\ x^2 & (0 \\leq x < 1) \\\\ 2x-1 & (x \\geq 1) \\end{cases}$$
-
-분수 포함:
-$$h(t) = \\begin{cases} \\frac{1}{2}pt^2 + \\frac{1}{2}qt + 5 & (t < 0) \\\\ 5 & (t \\geq 0) \\end{cases}$$
-
-절대값 정의:
-$$|x| = \\begin{cases} x & (x \\geq 0) \\\\ -x & (x < 0) \\end{cases}$$
-
-### 규칙 요약:
-- 각 조건의 수식과 조건 사이에 & 사용 (정렬 기호)
-- 각 조건 사이에 \\\\ 사용 (줄바꿈) — 마지막 조건 뒤에는 \\\\ 없음
-- 변수가 x, t, n, k 등 무엇이든 동일하게 cases 사용
-- \\begin{cases} 앞에 = 기호가 와야 함 (함수명 = \\begin{cases}...)
-- 중괄호(\\{, \\left\\{)로 대체하면 KaTeX에서 줄바꿈이 안 됩니다!
-
-## 수식 주의사항 (절대 지켜야 함!)
-- lim, log, sin, cos, tan 등은 반드시 \\를 붙여야 합니다!
-- $...$로 감싼 수식 안에 한글을 넣지 마세요. 한글은 수식 밖에!
-  올바른 예: $a_k > a_2$를 만족시키는
-  틀린 예: $a_k > a_2를 만족시키는$
-- 블록 수식 $$...$$는 반드시 별도 줄에 배치
-- 수식 달러 기호는 반드시 짝을 맞추세요 ($...$, $$...$$)
-
-## 도형 처리 (TikZ — 수능 방송 품질)
-도형이 있는 문제는 diagramTikz 필드에 TikZ 코드를 생성합니다.
-TikZ 코드는 \\begin{tikzpicture}...\\end{tikzpicture}만 포함합니다.
-이 코드는 XeLaTeX + 나눔명조로 컴파일되어 투명 PNG로 변환됩니다.
-
-### TikZ 규칙 (방송 품질 필수!)
-
-#### 컬러 시스템 (모든 도형/그래프에 루틴으로 적용!)
-TikZ 코드 시작 부분에 반드시 아래 컬러 정의를 포함하세요:
-\\definecolor{mainLine}{HTML}{4FC3F7}    % 메인 도형 선 — 밝은 하늘색
-\\definecolor{subLine}{HTML}{FFB74D}     % 보조 선/보조 도형 — 주황색
-\\definecolor{accentLine}{HTML}{81C784}  % 강조 선/세번째 요소 — 연두색
-\\definecolor{fillA}{HTML}{29B6F6}       % 색칠 영역 A — 파란색
-\\definecolor{fillB}{HTML}{FF9800}       % 색칠 영역 B — 주황색
-\\definecolor{fillC}{HTML}{66BB6A}       % 색칠 영역 C — 초록색
-\\definecolor{dotColor}{HTML}{EF5350}    % 점/교점 강조 — 빨간색
-\\definecolor{labelColor}{HTML}{FFFFFF}  % 라벨 — 흰색
-
-#### 적용 규칙 (절대 지켜야 함!!!)
-
-도형 테두리와 색칠 영역은 반드시 다른 색이어야 합니다!
-
-1. 도형 외곽선/테두리: \\draw[mainLine, line width=1.5pt]  → 밝은 하늘색 (#4FC3F7)
-2. 색칠/빗금 영역: \\fill[fillB, opacity=0.4]  → 주황색 (#FF9800) 또는 \\fill[fillC, opacity=0.4] → 초록색
-3. 보조 선: \\draw[subLine, line width=1.5pt] → 주황색
-4. 점/교점: \\filldraw[dotColor] (P) circle (2.5pt); → 빨간색
-5. 라벨: text=labelColor → 흰색
-6. 직각 표시: \\draw[white!70]
-
-절대 금지:
-- 테두리와 색칠을 같은 색으로 하지 마세요!
-- cyan, blue 등 직접 색 이름 사용 금지! 반드시 mainLine, fillB 등 정의된 컬러만 사용!
-- \\draw에 fillA 사용 금지! (fillA는 테두리와 비슷한 파란색이라 구분 안 됨)
-- 색칠은 반드시 fillB(주황) 또는 fillC(초록) 사용!
-
-#### 그래프 전용 규칙
-- 축: \\draw[white!50, ->] (x축, y축 — 반투명 흰색 화살표)
-- 함수 그래프 1: \\draw[mainLine, line width=1.5pt, smooth] (하늘색)
-- 함수 그래프 2: \\draw[subLine, line width=1.5pt, smooth] (주황색)
-- 함수 그래프 3: \\draw[accentLine, line width=1.5pt, smooth] (연두색)
-- 점근선: \\draw[white!30, dashed] (연한 흰색 점선)
-- 격자: \\draw[white!10] (매우 연한 격자)
-- 축 라벨: \\node[white!70] (반투명 흰색)
-- 원점: \\node[white!70] at (0,0) [below left] {O};
-
-#### 기타
-- 여러 그림 나란히 배치: minipage 사용
-- 좌표: 수학적으로 정확하게 계산 (대충 배치 금지!)
-- 검정색(black) 절대 사용 금지!
-- 원본 문제에서 색칠/빗금 영역이 있으면 반드시 색상으로 구분!
-
-### 좌표 계산 팁 (정확한 도형을 위해 반드시 사용)
-% 내분점 (m:n)
-\\coordinate (D) at ($(A)!{m/(m+n)}!(C)$);
-% 수선의 발 (C에서 직선 AB 위로)
-\\coordinate (H) at ($(A)!(C)!(B)$);
-% 분수 좌표 직접 입력
-\\coordinate (P) at ({54/7},{30/7});
-% 직각 표시
-\\draw[white] ($(C)+(-0.35,0)$) -- ++(0,0.35) -- ++(0.35,0);
-% 라벨 수동 오프셋 (겹침 방지)
-\\node[above right, text=white] at ($(P)+(0.1,0.2)$) {$A_2$};
-
-### TikZ 예시 (직각삼각형 with 색칠 + 내분점 — 다크 배경용 흰색!)
-\\begin{tikzpicture}[scale=1.2, every node/.style={font=\\small, text=white}]
-  \\coordinate (A) at (2,4);
-  \\coordinate (B) at (0,0);
-  \\coordinate (C) at (4,0);
-  \\coordinate (D) at ($(A)!{2/3}!(C)$);
-  \\coordinate (E) at ($(B)!(A)!(D)$);
-  \\draw[white, line width=1.5pt] (A) -- (B) -- (C) -- cycle;
-  \\draw[white, line width=1.5pt] (B) -- (D);
-  \\draw[white, line width=1.5pt] (A) -- (E);
-  % 색칠은 반드시 fillB(주황) 사용! mainLine과 같은 색 금지!
-  \\fill[fillB, opacity=0.4] (C) -- (E) -- (D) -- cycle;
-  \\draw[white] ($(C)+(-0.35,0)$) -- ++(0,0.35) -- ++(0.35,0);
-  \\node[above] at (A) {$A_1$};
-  \\node[below left] at (B) {$B_1$};
-  \\node[below right] at (C) {$C_1$};
-  \\node[below] at (D) {$D_1$};
-  \\node[right] at (E) {$E_1$};
-\\end{tikzpicture}
-
-### 여러 도형 나란히 배치 예시
-diagramTikz에 minipage를 사용하세요:
-\\begin{minipage}[b]{0.42\\textwidth}\\centering
-\\begin{tikzpicture}[scale=0.55]
-  ...R1 도형...
-\\end{tikzpicture}\\\\$R_1$
-\\end{minipage}\\hfill
-\\begin{minipage}[b]{0.52\\textwidth}\\centering
-\\begin{tikzpicture}[scale=0.55]
-  ...R2 도형...
-\\end{tikzpicture}\\\\$R_2$
-\\end{minipage}
-
-### 도형 없는 문제
-hasDiagram: false, diagramTikz: null
-
-## 빈칸 상자
-- 수식 밖(일반 HTML): <span class="answer-box">(가)</span>
-- 수식 안($...$ 또는 $$...$$): \\boxed{\\text{(가)}} 사용! (HTML 태그 절대 금지!)
-
-절대 규칙: $...$ 또는 $$...$$ 안에 <span>, <div> 등 HTML 태그를 넣지 마세요!
-수식 안 빈칸은 반드시 \\boxed{\\text{(가)}} 형태를 사용하세요.
-예시:
-  올바름: $$\\frac{a_n}{b_{n+1}} = \\boxed{\\text{(가)}} \\times n$$
-  틀림:   $$\\frac{a_n}{b_{n+1}} = <span class="answer-box">(가)</span> \\times n$$
-
-## 풀이 과정 큰 박스
-<div class="solution-box">풀이 내용</div>
-
-## 객관식 보기 — 무조건 생략!
-객관식 보기(①②③④⑤)가 문제에 있더라도 choicesHtml은 반드시 null로 설정하세요.
-방송에서는 보기 없이 문제 본문만 표시합니다. 절대 보기를 포함하지 마세요!
+- difficulty 1: 교과서 기본 (쉬운 내용 이해, 2점 문제)
+- difficulty 2: 기본 응용 (표준적 추론, 3점 쉬운 문제)
+- difficulty 3: 표준 (3점 보통 난이도, 일반적 수능 문제)
+- difficulty 4: 고난도 (수능 고난도, EBS 연계 심화)
+- difficulty 5: 킬러 (수능 최고난도, 복합 지문 추론)
 
 ## subject 분류
-- 2022 개정: 공통수학1, 공통수학2, 대수, 미적분1, 확률과통계, 미적분2, 기하
-- 2015 개정: 수학I, 수학II, 확률과통계, 미적분, 기하
+- 독서 (비문학)
+- 문학
+- 화법과작문
+- 언어와매체
+- 공통국어 (화법/작문/언어 통합)
 
 ## unitName 분류
-수학I/수학II: "수열의 극한", "함수의 극한", "미분계수와 도함수", "도함수의 활용", "정적분의 활용"
-미적분: "여러 가지 함수의 미분", "여러 가지 적분법", "급수"
-확률과통계: "조건부확률", "확률분포", "통계적 추정"
-기하: "이차곡선", "평면벡터의 성분과 내적", "공간도형"
+독서: "인문", "사회", "과학", "기술", "예술", "융합"
+문학: "현대시", "현대소설", "고전시가", "고전소설", "수필/극", "복합"
+화법과작문: "화법", "작문", "화법과작문 통합"
+언어와매체: "음운", "형태/단어", "문장/통사", "의미/담화", "매체", "국어사"
+공통국어: "듣기말하기", "읽기", "쓰기"
 
-## 중요 (절대 지켜야 함!)
-- 수식 하나라도 틀리면 방송 사고입니다
-- 빈칸 상자는 반드시 answer-box로 변환
-- 수식 $...$ 안에 한글을 넣지 마세요
+## 지문(제시문) 처리 규칙 (★★★ 가장 중요 ★★★)
 
-## 구하고자 하는 것 (절대 누락 금지!)
-- bodyHtml 맨 마지막에 "~의 값은?", "~를 구하시오" 등 구하고자 하는 것을 반드시 포함!
-- 예: <br><br><span class="question-line">$p + q + h(4)$의 값은?</span>
-- questionHtml은 반드시 null! 구하고자 하는 것은 bodyHtml 끝에 넣으세요.
-- 원본에 "~의 값은?" 또는 "~를 구하시오"가 있으면 절대 빠뜨리지 마세요!
+### 비문학(독서) 지문
+- 문단 구분을 정확히 유지: 각 문단을 <p> 태그로 감싸기
+- 문단 앞 들여쓰기는 CSS로 처리 (text-indent)
+- 지문이 길면 전체를 bodyHtml에 넣되, 의미 단위로 문단 구분
+- 예: <p>첫 번째 문단 내용...</p><p>두 번째 문단 내용...</p>
+
+### 문학 지문 — 시(詩)
+- 시의 행 구분을 반드시 유지: 각 행을 <br>로 구분
+- 연(stanza) 구분: 빈 줄은 <br><br>로 표현
+- 시 제목과 작가: <div class="poem-title">제목 — 작가</div>
+- 예:
+  <div class="poem-title">풀 — 김수영</div>
+  풀이 눕는다<br>
+  바람보다도 더 빨리 눕는다<br>
+  <br>
+  바람보다도 더 빨리 울고<br>
+  바람보다 먼저 일어난다
+
+### 문학 지문 — 소설/수필
+- 대화문은 따옴표 유지
+- 서술 부분과 대화 부분의 문단 구분 유지
+- 생략 부분 [중략], [앞부분 줄거리] 등은 <div class="passage-note">[중략]</div>로 처리
+
+### EBS 연계 표시
+- 출처가 EBS 교재인 경우: source 필드에 "수능특강 독서", "수능완성 문학" 등 기재
+
+## <보기> 처리
+- 문제에 <보기>가 있으면 conditionHtml에 넣기
+- <보기> 안의 ㄱ, ㄴ, ㄷ 구분은 <br>로 줄바꿈
+- 예: conditionHtml: "<strong>&lt;보기&gt;</strong><br>ㄱ. 첫 번째 내용<br>ㄴ. 두 번째 내용<br>ㄷ. 세 번째 내용"
+
+## 밑줄/강조 처리
+- 원본에서 밑줄 친 부분: <u>밑줄 내용</u>
+- ⓐⓑⓒ 등 동그라미 기호: 그대로 유니코드 사용
+- [A], [B] 등 구간 표시: 그대로 텍스트로 유지
+
+## 빈칸 상자
+- 빈칸이 있는 문제: <span class="answer-box">(가)</span>
+- 여러 빈칸: (가), (나), (다) 각각 answer-box로 감싸기
+
+## 객관식 보기 (★ 반드시 포함!)
+객관식 문제의 선지(①②③④⑤)는 choicesHtml에 반드시 포함하세요.
+- 각 선지를 <div class="choice-item">① 선지 내용</div> 형태로 작성
+- 선지가 5개면 5개 모두 포함
+- 주관식(서술형) 문제는 choicesHtml을 null로
+- 선지 안에 밑줄이 있으면 <u>내용</u> 사용
+
+## 질문 (절대 누락 금지!)
+- bodyHtml 맨 마지막에 질문을 반드시 포함!
+- 예: <br><br><span class="question-line">윗글에 대한 설명으로 적절한 것은?</span>
+- questionHtml은 반드시 null! 질문은 bodyHtml 끝에 넣으세요.
+- 원본의 "~적절한 것은?", "~않은 것은?" 등 질문을 절대 빠뜨리지 마세요!
 
 ## 조건 박스 (conditionHtml)
-- 원본 문제에서 박스(테두리) 안에 조건이 쓰여 있으면 → conditionHtml에 넣으세요
-- 박스가 없는 일반 조건이면 → bodyHtml에 포함
+- 원본 문제에서 <보기> 박스가 있으면 → conditionHtml에 넣으세요
+- <보기>가 없는 일반 문제면 → conditionHtml은 null
 - conditionHtml에 넣은 내용은 자동으로 박스 스타일로 렌더링됩니다
-- 예: "자연수 n에 대하여 직선 $y = ...$" 가 박스 안에 있으면 conditionHtml에 넣기
 
 ## 기타
-- bodyHtml에 문제 전체(본문 + 조건 + 구하고자 하는 것)를 빠짐없이 넣으세요
+- bodyHtml에 문제 전체(지문 + 문제 텍스트 + 질문)를 빠짐없이 넣으세요
 - 줄바꿈 가독성: 의미 단위로 자연스럽게 줄바꿈하세요. <br> 태그를 적절히 사용
-  예시: "0 < ∠CAB < π/6인 호 AB 위의 점 C에 대하여" 를 한 줄로 유지`;
+- 한자가 있으면 그대로 유지 (한자 병기 포함)
+- 각주나 미주가 있으면 본문에 포함`;
 
 /**
  * JSON 파싱 전 LaTeX 백슬래시 이스케이프 전처리
@@ -523,11 +398,11 @@ async function detectDiagram(
 ): Promise<boolean> {
   const model = client.getGenerativeModel({
     model: "gemini-3-flash-preview",
-    systemInstruction: "이미지를 보고 도형, 그래프, 그림이 있는지만 판단하세요. 반드시 true 또는 false만 응답하세요.",
+    systemInstruction: "이미지를 보고 도형, 그래프, 그림, 도표가 있는지만 판단하세요. 반드시 true 또는 false만 응답하세요.",
   });
   const result = await model.generateContent([
     imageContent,
-    { text: "이 수학 문제에 도형, 그래프, 또는 그림이 있습니까? true/false만 답하세요." },
+    { text: "이 국어 문제에 도형, 그래프, 도표, 또는 그림이 있습니까? true/false만 답하세요." },
   ]);
   const text = result.response.text()?.trim().toLowerCase() || "";
   return text.includes("true");
@@ -584,28 +459,7 @@ async function analyzeText(
   // ★ 디버그: Gemini 원본 bodyHtml 출력
   console.log("📋 [DEBUG] Gemini bodyHtml 원본:", JSON.stringify((parsed.bodyHtml as string) || "").slice(0, 500));
 
-  // ★ 검증: 조건부 함수가 있는데 \begin{cases}가 누락되면 재시도
-  const allHtml = ((parsed.bodyHtml as string) || "") + ((parsed.conditionHtml as string) || "");
-  // 다양한 변수(x,t,n,k 등)와 부등호 패턴 감지
-  const conditionRegex = /\(\s*[a-zA-Z]\s*(?:[<>≤≥]|\\leq|\\geq|\\le|\\ge|\\leqslant|\\geqslant)/;
-  // 중괄호 + 조건이 한 줄로 나열된 패턴 감지
-  const inlineBraceRegex = /\\?\{[^}]*\(\s*[a-zA-Z]\s*[<>≤≥][^}]*\(\s*[a-zA-Z]\s*[<>≤≥]/;
-  const hasConditionPattern = conditionRegex.test(allHtml);
-  const hasInlineBrace = inlineBraceRegex.test(allHtml);
-  const hasCasesEnv = /\\begin\{cases\}/.test(allHtml);
-  const needsCases = hasConditionPattern && !hasCasesEnv;
-  const hasBrokenCases = hasInlineBrace && !hasCasesEnv;
-
-  if (tier === "flash" && (needsCases || hasBrokenCases)) {
-    console.log("⚠ Flash가 cases 환경 누락 — Pro로 자동 재시도");
-    const casesWarning = "\n\n⚠️ 중요: 이 문제에는 구간별 정의 함수가 있습니다. 반드시 \\begin{cases}...\\end{cases} 환경을 사용하세요! \\{ \\}로 감싸거나 한 줄로 나열하면 안 됩니다!";
-    return analyzeText(client, imageContent, userMessage + casesWarning, "pro");
-  }
-
-  if (tier === "pro" && (needsCases || hasBrokenCases)) {
-    console.warn("⚠ Pro도 cases 환경 누락 — 후처리로 자동 수정 시도");
-  }
-
+  // 국어 문제는 수학 전용 cases 검증 불필요
   return parsed;
 }
 
@@ -631,8 +485,8 @@ async function generateTikz(
   const model = client.getGenerativeModel({
     model: modelName,
     systemInstruction: [
-      "당신은 수학 문제의 도형을 TikZ 코드로 변환하는 전문가입니다.",
-      "사용자가 수학 문제 이미지를 보내면, 도형/그래프 부분만 TikZ 코드로 생성합니다.",
+      "당신은 국어 문제의 도표/그림을 TikZ 코드로 변환하는 전문가입니다.",
+      "사용자가 국어 문제 이미지를 보내면, 도표/그림 부분만 TikZ 코드로 생성합니다.",
       "",
       "응답 형식: ```latex 코드블록 안에 \\begin{tikzpicture}...\\end{tikzpicture}만 넣으세요.",
       "JSON으로 감싸지 마세요. 순수 TikZ 코드만 응답하세요.",
@@ -643,7 +497,7 @@ async function generateTikz(
 
   const result = await model.generateContent([
     imageContent,
-    { text: "이 수학 문제의 도형/그래프를 TikZ 코드로 생성해주세요. ```latex 코드블록으로 응답하세요." },
+    { text: "이 국어 문제의 도표/그림을 TikZ 코드로 생성해주세요. ```latex 코드블록으로 응답하세요." },
   ]);
   const text = result.response.text();
   if (!text) return null;
@@ -660,13 +514,14 @@ export async function analyzeProblemImage(
   source?: string,
   headerText?: string,
   footerText?: string,
-  usePro?: boolean
+  usePro?: boolean,
+  renderOptions?: RenderOptions
 ): Promise<AnalysisResult> {
   const client = getClient();
 
   const userMessage = problemNumber
-    ? `이 수학 문제를 분석해주세요. 문제 번호는 ${problemNumber}번입니다.`
-    : "이 수학 문제를 분석해주세요.";
+    ? `이 국어 문제를 분석해주세요. 문제 번호는 ${problemNumber}번입니다.`
+    : "이 국어 문제를 분석해주세요.";
 
   const imageContent = {
     inlineData: { mimeType: mediaType, data: imageBase64 },
@@ -715,33 +570,24 @@ export async function analyzeProblemImage(
   const p = parsed as any;
   const problemData: ProblemData = {
     number: problemNumber ?? p.number ?? 1,
-    subject: p.subject || "수학",
-    type: p.type || "주관식",
-    points: p.points || 4,
+    subject: p.subject || "국어",
+    type: p.type || "객관식",
+    points: p.points || 3,
     difficulty: p.difficulty || 3,
     unitName: p.unitName || undefined,
     source: source || undefined,
     headerText: headerText || undefined,
     footerText: footerText || undefined,
-    bodyHtml: fixPiecewiseFunctions(fixDoubleEscapedEnvironments(fixAnswerBoxInMath(fixMathOperators(p.bodyHtml || "")))),
+    bodyHtml: p.bodyHtml || "",
     questionHtml: "",
-    conditionHtml: p.conditionHtml ? fixPiecewiseFunctions(fixDoubleEscapedEnvironments(fixAnswerBoxInMath(fixMathOperators(p.conditionHtml)))) : undefined,
+    conditionHtml: p.conditionHtml || undefined,
     hasDiagram: !!hasDiagram,
     diagramPngBase64,
     diagramLayout,
     choicesHtml: p.choicesHtml || undefined,
   };
 
-  // 최종 bodyHtml에서 cases 주변 실제 문자열 확인
-  const finalBody = problemData.bodyHtml;
-  const beginIdx = finalBody.indexOf("begin{cases}");
-  if (beginIdx >= 0) {
-    const around = finalBody.slice(Math.max(0, beginIdx - 5), beginIdx + 20);
-    console.log("🔬 [DEBUG] 최종 begin{cases} 주변:", JSON.stringify(around));
-    console.log("🔬 [DEBUG] begin 앞 5글자 charCodes:", [...finalBody.slice(Math.max(0, beginIdx - 5), beginIdx)].map(c => c.charCodeAt(0)));
-  }
-
-  const html = generateProblemHtml(problemData);
+  const html = generateProblemHtml(problemData, renderOptions);
 
   return { problemData, html };
 }
@@ -780,6 +626,212 @@ export async function regenerateTikzWithPro(
   }
 
   return { tikzCode, pngBase64, diagramLayout };
+}
+
+/**
+ * 지문 이미지 분석 — 지문만 추출하여 HTML로 변환
+ */
+export async function analyzePassageImage(
+  imageBase64: string,
+  mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif",
+  source?: string
+): Promise<{ passageHtml: string; passageSubject: string; passageUnit: string }> {
+  const client = getClient();
+
+  const PASSAGE_PROMPT = `당신은 국어 지문(제시문) 이미지를 분석하여 HTML로 변환하는 전문가입니다.
+
+## 작업
+사용자가 국어 지문 스크린샷을 보내면 지문 텍스트를 정확하게 추출합니다.
+
+## 응답 형식
+반드시 아래 JSON 형식으로만 응답하세요.
+
+\`\`\`json
+{
+  "subject": "독서",
+  "unitName": "인문",
+  "passageHtml": "지문 전체 HTML"
+}
+\`\`\`
+
+## 지문 처리 규칙
+- 비문학: 문단별 <p> 태그, 들여쓰기 유지
+- 시(詩): 행마다 <br>, 연 구분은 <br><br>, 제목/작가는 <div class="poem-title">제목 — 작가</div>
+- 소설/수필: 대화문 따옴표 유지, [중략] 등은 <div class="passage-note">[중략]</div>
+- 밑줄: <u>내용</u>, ⓐⓑⓒ 등 기호는 유니코드 그대로
+- [A], [B] 등 구간 표시 그대로 유지
+- 한자 병기 유지
+- 각주/미주 포함`;
+
+  const model = client.getGenerativeModel({
+    model: "gemini-3-flash-preview",
+    systemInstruction: PASSAGE_PROMPT,
+  });
+
+  const result = await model.generateContent([
+    { inlineData: { mimeType: mediaType, data: imageBase64 } },
+    { text: "이 국어 지문을 분석해주세요." },
+  ]);
+
+  const responseText = result.response.text();
+  if (!responseText) throw new Error("지문 분석 실패: 응답 없음");
+
+  let jsonStr = responseText.trim();
+  const jsonMatch = jsonStr.match(/```json\s*([\s\S]*?)```/);
+  if (jsonMatch) jsonStr = jsonMatch[1].trim();
+
+  const escaped = escapeLatexInJson(jsonStr);
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(escaped);
+  } catch {
+    parsed = JSON.parse(jsonStr);
+  }
+
+  return {
+    passageHtml: (parsed.passageHtml as string) || "",
+    passageSubject: (parsed.subject as string) || "국어",
+    passageUnit: (parsed.unitName as string) || "",
+  };
+}
+
+/**
+ * 지문 맥락을 포함하여 문제 이미지 분석
+ * passageHtml을 Gemini에 텍스트로 제공하여 문맥 이해도를 높임
+ */
+export async function analyzeWithPassage(
+  passageHtml: string,
+  problemImageBase64: string,
+  mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif",
+  problemNumber?: number,
+  source?: string,
+  headerText?: string,
+  footerText?: string,
+  renderOptions?: RenderOptions,
+): Promise<AnalysisResult> {
+  const client = getClient();
+
+  const userMessage = `이 국어 문제를 분석해주세요.${problemNumber ? ` 문제 번호는 ${problemNumber}번입니다.` : ""}
+
+참고로, 이 문제는 아래 지문과 함께 출제된 문제입니다. 지문 내용을 참고하여 문제를 정확하게 분석해주세요.
+단, bodyHtml에는 문제 이미지에 보이는 내용만 넣으세요. 지문 본문은 넣지 마세요.
+
+--- 지문 ---
+${passageHtml}
+--- 지문 끝 ---`;
+
+  const imageContent = {
+    inlineData: { mimeType: mediaType, data: problemImageBase64 },
+  };
+
+  const parsed = await analyzeText(client, imageContent, userMessage, "flash");
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const p = parsed as any;
+  const problemData: ProblemData = {
+    number: problemNumber ?? p.number ?? 1,
+    subject: p.subject || "국어",
+    type: p.type || "객관식",
+    points: p.points || 3,
+    difficulty: p.difficulty || 3,
+    unitName: p.unitName || undefined,
+    source: source || undefined,
+    headerText: headerText || undefined,
+    footerText: footerText || undefined,
+    bodyHtml: p.bodyHtml || "",
+    questionHtml: "",
+    conditionHtml: p.conditionHtml || undefined,
+    hasDiagram: false,
+    choicesHtml: p.choicesHtml || undefined,
+  };
+
+  const html = generateProblemHtml(problemData, renderOptions);
+  return { problemData, html };
+}
+
+/**
+ * 강의노트/교재 이미지 분석 — 텍스트+구조 추출하여 HTML로 변환
+ */
+export async function analyzeLectureNoteImage(
+  imageBase64: string,
+  mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif",
+  source?: string
+): Promise<{ noteHtml: string; noteTitle: string; noteSubject: string }> {
+  const client = getClient();
+
+  const NOTE_PROMPT = `당신은 국어 교재/강의노트 이미지를 분석하여 HTML로 변환하는 전문가입니다.
+
+## 작업
+사용자가 국어 강의노트, EBS 교재 페이지, 개념 정리 자료 등의 스크린샷을 보내면 내용을 **빠짐없이** 정확하게 추출합니다.
+
+## 응답 형식
+반드시 아래 JSON 형식으로만 응답하세요.
+
+\`\`\`json
+{
+  "noteTitle": "노트 제목/테마명",
+  "noteSubject": "독서",
+  "noteHtml": "강의노트 전체 HTML"
+}
+\`\`\`
+
+## 강의노트 변환 규칙
+- 제목/테마명: <h2 class="note-theme">Theme 2. 비유의 방식</h2>
+- 소제목/개념학습 라벨: <h3 class="note-subtitle">개념 학습: 동어 치환은 대응의 개념으로 쓰인다</h3>
+- 핵심 포인트: <div class="note-point"><strong>독해 POINT</strong><br>포인트 내용...</div>
+- 정의/개념 번호별: <div class="note-concept"><strong>1. 정의:</strong> A를 A답게 규정하는 것이다.<br>독서에서 정의는...</div>
+- 보조설명/사이드노트(왼쪽 칼럼 등): <div class="note-side"><strong>소제목</strong><br>내용...</div>
+- 강조: <strong>강조</strong>
+- 일반 문단: <p>내용</p>
+- 밑줄: <u>내용</u>
+- 구분선: <hr class="note-divider">
+
+## ★★★ 절대 규칙: 모든 텍스트 추출 (빠뜨리면 방송 사고!) ★★★
+
+1. **2단/다단 레이아웃**: 이미지에 왼쪽 칼럼과 오른쪽 칼럼이 있으면 **양쪽 모두** 추출!
+   - 왼쪽 사이드바 내용 → <div class="note-side">로 감싸기
+   - 오른쪽 본문 내용 → 일반 구조로 작성
+   - 어느 쪽이든 빠뜨리지 마세요!
+
+2. **모든 문장을 끝까지 추출**: 문장을 중간에 자르거나 "..." 으로 생략하지 마세요.
+   원본에 있는 모든 글자를 정확히 옮기세요.
+
+3. **번호 체계 유지**: "1) 비유법의 뼈대", "2) 비유는..." 등 번호를 정확히 추출
+
+4. **따옴표/인용문**: "표현하려는 대상(원관념)을 다른 대상(보조관념)에 빗대어 말하는 방식" 처럼 따옴표 안의 내용을 정확히 추출
+
+5. **특수 라벨**: "보기", "함께 읽기", "개념 학습", "독해 POINT" 등은 해당 클래스로 변환`;
+
+  const model = client.getGenerativeModel({
+    model: "gemini-3.1-pro-preview",
+    systemInstruction: NOTE_PROMPT,
+  });
+
+  const result = await model.generateContent([
+    { inlineData: { mimeType: mediaType, data: imageBase64 } },
+    { text: "이 강의노트/교재 이미지의 모든 텍스트를 빠짐없이 추출해주세요. 왼쪽 칼럼과 오른쪽 칼럼이 있으면 양쪽 모두 추출하세요." },
+  ]);
+
+  const responseText = result.response.text();
+  if (!responseText) throw new Error("강의노트 분석 실패: 응답 없음");
+
+  let jsonStr = responseText.trim();
+  const jsonMatch = jsonStr.match(/```json\s*([\s\S]*?)```/);
+  if (jsonMatch) jsonStr = jsonMatch[1].trim();
+
+  const escaped = escapeLatexInJson(jsonStr);
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(escaped);
+  } catch {
+    parsed = JSON.parse(jsonStr);
+  }
+
+  return {
+    noteHtml: (parsed.noteHtml as string) || "",
+    noteTitle: (parsed.noteTitle as string) || "강의노트",
+    noteSubject: (parsed.noteSubject as string) || "국어",
+  };
 }
 
 export async function analyzeMultipleProblems(

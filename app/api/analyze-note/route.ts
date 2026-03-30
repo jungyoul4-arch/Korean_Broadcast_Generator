@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { analyzeProblemImage, analyzeWithPassage } from "@/lib/claude";
-import type { RenderOptions } from "@/lib/template";
+import { analyzeLectureNoteImage } from "@/lib/claude";
+import { generateLectureNoteHtml, type RenderOptions } from "@/lib/template";
 import type { BackgroundPreset } from "@/lib/theme";
 
 export const maxDuration = 60;
@@ -9,7 +9,6 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get("image") as File | null;
-    const numberStr = formData.get("number") as string | null;
 
     if (!file) {
       return NextResponse.json({ error: "이미지가 없습니다" }, { status: 400 });
@@ -28,29 +27,29 @@ export async function POST(request: NextRequest) {
       mediaType = "image/gif";
     }
 
-    const number = numberStr ? parseInt(numberStr, 10) : undefined;
     const source = formData.get("source") as string | null;
     const headerText = formData.get("headerText") as string | null;
-    const footerText = formData.get("footerText") as string | null;
-    const usePro = formData.get("usePro") === "true";
-    const passageHtml = formData.get("passageHtml") as string | null;
     const background = (formData.get("background") as BackgroundPreset) || "transparent";
     const renderOptions: RenderOptions = { background };
+    const result = await analyzeLectureNoteImage(base64, mediaType, source || undefined);
 
-    // 지문 맥락이 있으면 지문+문제 함께 분석, 없으면 단독 분석
-    const result = passageHtml
-      ? await analyzeWithPassage(passageHtml, base64, mediaType, number, source || undefined, headerText || undefined, footerText || undefined, renderOptions)
-      : await analyzeProblemImage(base64, mediaType, number, source || undefined, headerText || undefined, footerText || undefined, usePro, renderOptions);
+    const html = generateLectureNoteHtml({
+      noteHtml: result.noteHtml,
+      noteTitle: result.noteTitle,
+      subject: result.noteSubject,
+      source: source || undefined,
+      headerText: headerText || undefined,
+    }, renderOptions);
 
     return NextResponse.json({
       success: true,
-      problemData: result.problemData,
-      html: result.html,
+      ...result,
+      html,
     });
   } catch (error: unknown) {
     const message =
-      error instanceof Error ? error.message : "분석 중 오류가 발생했습니다";
-    console.error("Analyze error:", error);
+      error instanceof Error ? error.message : "강의노트 분석 중 오류가 발생했습니다";
+    console.error("Note analyze error:", error);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
