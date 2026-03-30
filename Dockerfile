@@ -1,5 +1,5 @@
 # ============================================
-# math-broadcast-generator Dockerfile
+# korean-broadcast-generator Dockerfile
 # Node.js + Playwright + TeX Live + Ghostscript
 # ============================================
 
