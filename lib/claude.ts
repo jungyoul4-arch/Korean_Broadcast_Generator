@@ -390,6 +390,51 @@ export interface AnalysisResult {
 }
 
 /**
+ * bodyHtml에서 <보기> 블록을 감지하여 conditionHtml로 추출
+ * Gemini가 conditionHtml 대신 bodyHtml에 보기를 넣는 경우의 후처리
+ */
+function extractConditionFromBody(bodyHtml: string): { bodyHtml: string; conditionHtml: string } | null {
+  // <보 기> 또는 &lt;보기&gt; 또는 &lt;보 기&gt; 패턴 감지
+  // 보기 제목부터 선지(①) 직전 또는 question-line 직전까지 추출
+  const bogiPatterns = [
+    /(&lt;\s*보\s*기\s*&gt;|<보\s*기>|＜\s*보\s*기\s*＞)/,
+  ];
+
+  let bogiIdx = -1;
+  let matchedPattern = "";
+  for (const pat of bogiPatterns) {
+    const m = bodyHtml.match(pat);
+    if (m && m.index !== undefined) {
+      bogiIdx = m.index;
+      matchedPattern = m[0];
+      break;
+    }
+  }
+
+  if (bogiIdx === -1) return null;
+
+  // 보기 끝 지점: 선지(①②③④⑤) 시작 직전, 또는 bodyHtml 끝
+  const afterBogi = bodyHtml.slice(bogiIdx);
+  const choiceMatch = afterBogi.match(/[①②③④⑤]\s/);
+  const endIdx = choiceMatch && choiceMatch.index !== undefined
+    ? bogiIdx + choiceMatch.index
+    : bodyHtml.length;
+
+  // 보기 내용 추출
+  const conditionRaw = bodyHtml.slice(bogiIdx, endIdx).trim();
+  // bodyHtml에서 보기 부분 제거
+  const newBodyHtml = (bodyHtml.slice(0, bogiIdx) + bodyHtml.slice(endIdx)).trim();
+
+  // 보기 제목을 strong 태그로 감싸기
+  const conditionHtml = conditionRaw.replace(
+    matchedPattern,
+    `<strong>${matchedPattern}</strong>`
+  );
+
+  return { bodyHtml: newBodyHtml, conditionHtml };
+}
+
+/**
  * Step 0: Flash로 도형 유무만 빠르게 판별 (0.5~1초)
  */
 async function detectDiagram(
@@ -398,7 +443,7 @@ async function detectDiagram(
 ): Promise<boolean> {
   const model = client.getGenerativeModel({
     model: "gemini-3-flash-preview",
-    systemInstruction: "이미지를 보고 도형, 그래프, 그림, 도표가 있는지만 판단하세요. 반드시 true 또는 false만 응답하세요.",
+    systemInstruction: "이미지를 보고 도형, 그래프, 그림, 도표가 있는지만 판단하세요. 반드시 true 또는 false만 응답하세요.\n주의: <보기> 박스의 사각형 테두리, 단순 텍스트 박스, 선지 번호 등은 도형이 아닙니다. 수학적 그래프, 좌표계, 벤 다이어그램, 흐름도, 표(table) 등 실제 도형/도표만 true로 판단하세요.",
   });
   const result = await model.generateContent([
     imageContent,
@@ -488,6 +533,11 @@ async function generateTikz(
       "당신은 국어 문제의 도표/그림을 TikZ 코드로 변환하는 전문가입니다.",
       "사용자가 국어 문제 이미지를 보내면, 도표/그림 부분만 TikZ 코드로 생성합니다.",
       "",
+      "⚠️ 중요: <보기> 박스의 사각형 테두리는 도형이 아닙니다! 텍스트를 감싸는 단순 박스/테두리는 무시하세요.",
+      "도형이 아닌 것: <보기> 박스 테두리, 선지 번호, 문제 번호 박스, 단순 텍스트 테두리",
+      "도형인 것: 수학적 그래프, 좌표계, 벤 다이어그램, 흐름도, 표(table), 도식",
+      "도형이 없으면 아무것도 응답하지 마세요.",
+      "",
       "응답 형식: ```latex 코드블록 안에 \\begin{tikzpicture}...\\end{tikzpicture}만 넣으세요.",
       "JSON으로 감싸지 마세요. 순수 TikZ 코드만 응답하세요.",
       "",
@@ -528,14 +578,20 @@ export async function analyzeProblemImage(
   };
 
   // 텍스트 분석: usePro이면 Pro, 아니면 Flash (cases 검증 실패 시 자동 Pro 재시도)
-  // TikZ 생성: 항상 Pro (정확도 우선)
+  // TikZ 생성: detectDiagram으로 도형 유무 먼저 판별 후, 있을 때만 Pro로 생성
   const textTier = usePro ? "pro" : "flash";
-  console.log(`${textTier}(텍스트) + Pro(TikZ) 병렬 시작`);
 
-  const [parsed, tikzCode] = await Promise.all([
+  // Step 1: 텍스트 분석 + 도형 유무 판별 병렬 실행
+  const [parsed, hasDiagramDetected] = await Promise.all([
     analyzeText(client, imageContent, userMessage, textTier),
-    generateTikz(client, imageContent, "pro"),
+    detectDiagram(client, imageContent),
   ]);
+  console.log(`${textTier}(텍스트) 완료, 도형 감지: ${hasDiagramDetected}`);
+
+  // Step 2: 도형이 있을 때만 TikZ 생성
+  const tikzCode = hasDiagramDetected
+    ? await generateTikz(client, imageContent, "pro")
+    : null;
 
   const hasDiagram = !!tikzCode;
   if (tikzCode) {
@@ -568,6 +624,20 @@ export async function analyzeProblemImage(
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const p = parsed as any;
+
+  // 후처리: bodyHtml에 <보기> 내용이 포함된 경우 conditionHtml로 추출
+  let bodyHtml: string = p.bodyHtml || "";
+  let conditionHtml: string | undefined = p.conditionHtml || undefined;
+
+  if (!conditionHtml && bodyHtml) {
+    const extracted = extractConditionFromBody(bodyHtml);
+    if (extracted) {
+      bodyHtml = extracted.bodyHtml;
+      conditionHtml = extracted.conditionHtml;
+      console.log("📦 [후처리] bodyHtml에서 <보기> 내용을 conditionHtml로 추출");
+    }
+  }
+
   const problemData: ProblemData = {
     number: problemNumber ?? p.number ?? 1,
     subject: p.subject || "국어",
@@ -578,9 +648,9 @@ export async function analyzeProblemImage(
     source: source || undefined,
     headerText: headerText || undefined,
     footerText: footerText || undefined,
-    bodyHtml: p.bodyHtml || "",
+    bodyHtml,
     questionHtml: "",
-    conditionHtml: p.conditionHtml || undefined,
+    conditionHtml,
     hasDiagram: !!hasDiagram,
     diagramPngBase64,
     diagramLayout,

@@ -264,9 +264,8 @@ ${bgConfig.overlayBefore ? `body::before { ${bgConfig.overlayBefore} }` : ''}
   font-family: ${FONT_SYSTEM.body};
   font-size: 17px;
   color: ${isDark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.75)'};
-  border: none;
-  border-left: 3px solid rgba(${theme.primaryRgb}, 0.5);
-  border-radius: 2px;
+  border: 1.5px solid ${isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.3)'};
+  border-radius: 6px;
   background: transparent;
   line-height: 2;
 }
