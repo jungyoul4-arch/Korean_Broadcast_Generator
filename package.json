@@ -9,7 +9,7 @@
     "start": "next start",
     "preview": "serve output -p 3030 --cors",
     "render": "node scripts/render.js",
-    "postinstall": "prisma generate",
+    "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
