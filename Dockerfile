@@ -88,6 +88,7 @@ COPY --from=builder /app/node_modules/diff ./node_modules/diff
 COPY --from=builder /app/node_modules/make-error ./node_modules/make-error
 COPY --from=builder /app/node_modules/v8-compile-cache-lib ./node_modules/v8-compile-cache-lib
 COPY --from=builder /app/node_modules/yn ./node_modules/yn
+COPY --from=builder /app/node_modules/typescript ./node_modules/typescript
 COPY --from=builder /app/tsconfig.json ./tsconfig.json
 
 # data 초기 파일 복사 (Volume 마운트 시 Volume 내용이 우선됨)
@@ -110,6 +111,19 @@ fi\n\
 # Prisma 스키마 동기화\n\
 echo "Syncing database schema..."\n\
 npx prisma db push --skip-generate\n\
+\n\
+# JSON → PostgreSQL 마이그레이션 (최초 1회만)\n\
+if [ ! -f /app/data/.migrated ]; then\n\
+  if [ -f /app/data/users.json ]; then\n\
+    echo "Running JSON to PostgreSQL migration..."\n\
+    npx ts-node scripts/migrate-to-postgres.ts\n\
+    touch /app/data/.migrated\n\
+    echo "Migration completed!"\n\
+  else\n\
+    echo "No JSON files to migrate, skipping..."\n\
+    touch /app/data/.migrated\n\
+  fi\n\
+fi\n\
 \n\
 # 서버 시작\n\
 exec node server.js' > /app/start.sh && chmod +x /app/start.sh
