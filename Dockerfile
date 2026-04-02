@@ -8,11 +8,9 @@ FROM node:20-bookworm AS builder
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
-
-# Prisma 스키마 복사 및 클라이언트 생성
+# Prisma 스키마를 먼저 복사 (postinstall에서 prisma generate 실행됨)
 COPY prisma ./prisma
-RUN npx prisma generate
+RUN npm ci
 
 COPY . .
 RUN npm run build
