@@ -12,13 +12,13 @@ fi
 
 # Prisma 스키마 동기화
 echo "Syncing database schema..."
-node_modules/.bin/prisma db push --skip-generate
+node ./node_modules/prisma/build/index.js db push --skip-generate
 
 # JSON → PostgreSQL 마이그레이션 (최초 1회만)
 if [ ! -f /app/data/.migrated ]; then
   if [ -f /app/data/users.json ]; then
     echo "Running JSON to PostgreSQL migration..."
-    node_modules/.bin/ts-node scripts/migrate-to-postgres.ts
+    node --require ./node_modules/ts-node/register scripts/migrate-to-postgres.ts
     touch /app/data/.migrated
     echo "Migration completed!"
   else

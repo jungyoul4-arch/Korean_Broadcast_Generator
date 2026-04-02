@@ -70,7 +70,6 @@ COPY --from=builder /app/node_modules/playwright-core ./node_modules/playwright-
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
-COPY --from=builder /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
 COPY --from=builder /app/prisma ./prisma
 
 # public 폴더 복사
@@ -79,7 +78,6 @@ COPY --from=builder /app/public ./public
 # 마이그레이션 스크립트 및 ts-node 복사
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/node_modules/ts-node ./node_modules/ts-node
-COPY --from=builder /app/node_modules/.bin/ts-node ./node_modules/.bin/ts-node
 COPY --from=builder /app/node_modules/@tsconfig ./node_modules/@tsconfig
 COPY --from=builder /app/node_modules/@cspotcode ./node_modules/@cspotcode
 COPY --from=builder /app/node_modules/acorn-walk ./node_modules/acorn-walk
