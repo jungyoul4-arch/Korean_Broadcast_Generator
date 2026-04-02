@@ -8,7 +8,12 @@
     "build": "next build",
     "start": "next start",
     "preview": "serve output -p 3030 --cors",
-    "render": "node scripts/render.js"
+    "render": "node scripts/render.js",
+    "postinstall": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio",
+    "db:migrate:json": "npx ts-node scripts/migrate-to-postgres.ts"
   },
   "keywords": [],
   "author": "",
@@ -16,6 +21,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
     "@google/generative-ai": "^0.24.1",
+    "@prisma/client": "^5.22.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
@@ -31,6 +37,8 @@
   },
   "devDependencies": {
     "@types/archiver": "^7.0.0",
-    "serve": "^14.2.6"
+    "prisma": "^5.22.0",
+    "serve": "^14.2.6",
+    "ts-node": "^10.9.2"
   }
 }

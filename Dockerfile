@@ -1,6 +1,6 @@
 # ============================================
 # korean-broadcast-generator Dockerfile
-# Node.js + Playwright + TeX Live + Ghostscript
+# Node.js + Playwright + TeX Live + Ghostscript + Prisma
 # ============================================
 
 # --- Stage 1: Build ---
@@ -9,6 +9,11 @@ FROM node:20-bookworm AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
+
+# Prisma 스키마 복사 및 클라이언트 생성
+COPY prisma ./prisma
+RUN npx prisma generate
+
 COPY . .
 RUN npm run build
 
@@ -34,6 +39,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fontconfig \
     # 유틸리티
     ca-certificates \
+    # OpenSSL for Prisma
+    openssl \
     && rm -rf /var/lib/apt/lists/* \
     && fc-cache -fv
 
@@ -59,20 +66,36 @@ COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/node_modules/playwright ./node_modules/playwright
 COPY --from=builder /app/node_modules/playwright-core ./node_modules/playwright-core
 
+# Prisma 클라이언트 복사
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/prisma ./prisma
+
 # public 폴더 복사
 COPY --from=builder /app/public ./public
 
 # data 초기 파일 복사 (Volume 마운트 시 Volume 내용이 우선됨)
-# Volume이 비어있을 때만 초기 데이터로 사용
+# 파일 저장소(problems)는 계속 Volume 사용
 COPY --from=builder /app/data ./data-init
 
-# 시작 스크립트: Volume이 비어있으면 초기 데이터 복사 후 서버 시작
+# 시작 스크립트: DB 마이그레이션 실행 후 서버 시작
 RUN echo '#!/bin/sh\n\
-if [ ! -f /app/data/users.json ]; then\n\
-  echo "Volume empty — copying initial data..."\n\
-  cp -r /app/data-init/* /app/data/ 2>/dev/null || true\n\
+set -e\n\
+\n\
+# 파일 저장소 디렉토리 초기화 (Volume이 비어있을 때)\n\
+if [ ! -d /app/data/libraries ]; then\n\
+  echo "Initializing data directory..."\n\
   mkdir -p /app/data/libraries\n\
+  if [ -d /app/data-init/libraries ]; then\n\
+    cp -r /app/data-init/libraries/* /app/data/libraries/ 2>/dev/null || true\n\
+  fi\n\
 fi\n\
+\n\
+# Prisma 스키마 동기화\n\
+echo "Syncing database schema..."\n\
+npx prisma db push --skip-generate\n\
+\n\
+# 서버 시작\n\
 exec node server.js' > /app/start.sh && chmod +x /app/start.sh
 
 EXPOSE 3000

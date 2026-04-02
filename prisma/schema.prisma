@@ -1,0 +1,77 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  displayName  String
+  role         Role     @default(USER)
+  groupId      String?
+  createdAt    DateTime @default(now())
+
+  group         Group?         @relation("GroupMembers", fields: [groupId], references: [id], onDelete: SetNull)
+  ownedProblems SavedProblem[] @relation("ProblemOwner")
+  createdGroups Group[]        @relation("GroupCreator")
+
+  @@map("users")
+}
+
+model Group {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  createdById String
+
+  createdBy User   @relation("GroupCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  members   User[] @relation("GroupMembers")
+
+  @@map("groups")
+}
+
+model SavedProblem {
+  id                  String   @id
+  ownerId             String
+  itemType            ItemType @default(PROBLEM)
+  linkedProblemNumber Int?
+  subject             String   @default("")
+  unitName            String   @default("")
+  type                String   @default("")
+  points              Int      @default(0)
+  difficulty          Int      @default(0)
+  source              String   @default("")
+  tags                String[]
+  bodyHtml            String   @default("")
+  headerText          String?
+  footerText          String?
+  hasOriginal         Boolean  @default(false)
+  hasProblemPng       Boolean  @default(true)
+  hasContiPng         Boolean  @default(false)
+  hasHtml             Boolean  @default(true)
+  hasContiHtml        Boolean  @default(false)
+  createdAt           DateTime @default(now())
+
+  owner User @relation("ProblemOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+  @@index([subject])
+  @@index([createdAt])
+  @@map("saved_problems")
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum ItemType {
+  PROBLEM
+  LECTURE_NOTE
+}

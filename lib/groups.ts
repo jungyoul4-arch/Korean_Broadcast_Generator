@@ -1,10 +1,8 @@
 /**
- * 그룹 관리 — 유저 연합 시스템
+ * 그룹 관리 — PostgreSQL + Prisma 기반
  * 같은 그룹 유저들은 라이브러리를 통합 공유
  */
-import fs from "fs";
-import path from "path";
-import { setUserGroup } from "./users";
+import { prisma } from "./prisma";
 
 export interface Group {
   id: string;
@@ -15,132 +13,165 @@ export interface Group {
   createdBy: string;
 }
 
-interface GroupsIndex {
-  groups: Group[];
-}
-
-const DATA_DIR = path.join(process.cwd(), "data");
-const GROUPS_PATH = path.join(DATA_DIR, "groups.json");
-
-function ensureDir() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-
-function readGroups(): GroupsIndex {
-  ensureDir();
-  if (!fs.existsSync(GROUPS_PATH)) return { groups: [] };
-  return JSON.parse(fs.readFileSync(GROUPS_PATH, "utf-8"));
-}
-
-function writeGroups(index: GroupsIndex) {
-  ensureDir();
-  fs.writeFileSync(GROUPS_PATH, JSON.stringify(index, null, 2), "utf-8");
-}
-
-function generateId(): string {
-  return `g-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+/** Prisma Group + members → 기존 Group 인터페이스 변환 */
+function toGroup(dbGroup: {
+  id: string;
+  name: string;
+  description: string | null;
+  createdAt: Date;
+  createdById: string;
+  members?: { id: string }[];
+}): Group {
+  return {
+    id: dbGroup.id,
+    name: dbGroup.name,
+    description: dbGroup.description || undefined,
+    memberIds: dbGroup.members?.map((m) => m.id) || [],
+    createdAt: dbGroup.createdAt.toISOString(),
+    createdBy: dbGroup.createdById,
+  };
 }
 
 /** 전체 그룹 목록 */
-export function listGroups(): Group[] {
-  return readGroups().groups;
+export async function listGroups(): Promise<Group[]> {
+  const groups = await prisma.group.findMany({
+    include: { members: { select: { id: true } } },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return groups.map(toGroup);
 }
 
 /** 그룹 조회 */
-export function getGroup(id: string): Group | null {
-  return readGroups().groups.find((g) => g.id === id) || null;
+export async function getGroup(id: string): Promise<Group | null> {
+  const group = await prisma.group.findUnique({
+    where: { id },
+    include: { members: { select: { id: true } } },
+  });
+
+  return group ? toGroup(group) : null;
 }
 
 /** 유저가 속한 그룹 조회 */
-export function getGroupByUserId(userId: string): Group | null {
-  return readGroups().groups.find((g) => g.memberIds.includes(userId)) || null;
+export async function getGroupByUserId(userId: string): Promise<Group | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      group: {
+        include: { members: { select: { id: true } } },
+      },
+    },
+  });
+
+  return user?.group ? toGroup(user.group) : null;
 }
 
 /** 그룹 생성 */
-export function createGroup(input: {
+export async function createGroup(input: {
   name: string;
   description?: string;
   createdBy: string;
-}): Group {
-  const index = readGroups();
-  const group: Group = {
-    id: generateId(),
-    name: input.name,
-    description: input.description,
-    memberIds: [],
-    createdAt: new Date().toISOString(),
-    createdBy: input.createdBy,
-  };
-  index.groups.push(group);
-  writeGroups(index);
-  return group;
+}): Promise<Group> {
+  const group = await prisma.group.create({
+    data: {
+      name: input.name,
+      description: input.description || null,
+      createdById: input.createdBy,
+    },
+    include: { members: { select: { id: true } } },
+  });
+
+  return toGroup(group);
 }
 
 /** 그룹에 멤버 추가 */
-export function addMemberToGroup(groupId: string, userId: string): Group | null {
-  const index = readGroups();
-  const group = index.groups.find((g) => g.id === groupId);
+export async function addMemberToGroup(
+  groupId: string,
+  userId: string
+): Promise<Group | null> {
+  const group = await prisma.group.findUnique({
+    where: { id: groupId },
+  });
+
   if (!group) return null;
 
-  // 다른 그룹에서 제거
-  for (const g of index.groups) {
-    if (g.id !== groupId) {
-      const idx = g.memberIds.indexOf(userId);
-      if (idx !== -1) {
-        g.memberIds.splice(idx, 1);
-      }
-    }
-  }
+  // 유저의 groupId를 업데이트 (자동으로 이전 그룹에서 제거됨)
+  await prisma.user.update({
+    where: { id: userId },
+    data: { groupId },
+  });
 
-  if (!group.memberIds.includes(userId)) {
-    group.memberIds.push(userId);
-  }
+  // 업데이트된 그룹 반환
+  const updated = await prisma.group.findUnique({
+    where: { id: groupId },
+    include: { members: { select: { id: true } } },
+  });
 
-  writeGroups(index);
-  setUserGroup(userId, groupId);
-  return group;
+  return updated ? toGroup(updated) : null;
 }
 
 /** 그룹에서 멤버 제거 */
-export function removeMemberFromGroup(groupId: string, userId: string): Group | null {
-  const index = readGroups();
-  const group = index.groups.find((g) => g.id === groupId);
+export async function removeMemberFromGroup(
+  groupId: string,
+  userId: string
+): Promise<Group | null> {
+  const group = await prisma.group.findUnique({
+    where: { id: groupId },
+  });
+
   if (!group) return null;
 
-  group.memberIds = group.memberIds.filter((id) => id !== userId);
-  writeGroups(index);
-  setUserGroup(userId, undefined);
-  return group;
+  // 유저의 groupId를 null로 설정
+  await prisma.user.update({
+    where: { id: userId },
+    data: { groupId: null },
+  });
+
+  // 업데이트된 그룹 반환
+  const updated = await prisma.group.findUnique({
+    where: { id: groupId },
+    include: { members: { select: { id: true } } },
+  });
+
+  return updated ? toGroup(updated) : null;
 }
 
 /** 그룹 수정 */
-export function updateGroup(
+export async function updateGroup(
   id: string,
   updates: { name?: string; description?: string }
-): Group | null {
-  const index = readGroups();
-  const group = index.groups.find((g) => g.id === id);
-  if (!group) return null;
+): Promise<Group | null> {
+  try {
+    const group = await prisma.group.update({
+      where: { id },
+      data: {
+        ...(updates.name !== undefined && { name: updates.name }),
+        ...(updates.description !== undefined && { description: updates.description || null }),
+      },
+      include: { members: { select: { id: true } } },
+    });
 
-  if (updates.name !== undefined) group.name = updates.name;
-  if (updates.description !== undefined) group.description = updates.description;
-
-  writeGroups(index);
-  return group;
+    return toGroup(group);
+  } catch {
+    return null;
+  }
 }
 
-/** 그룹 삭제 (멤버들의 groupId도 해제) */
-export function deleteGroup(id: string): boolean {
-  const index = readGroups();
-  const idx = index.groups.findIndex((g) => g.id === id);
-  if (idx === -1) return false;
+/** 그룹 삭제 (멤버들의 groupId는 CASCADE로 자동 해제) */
+export async function deleteGroup(id: string): Promise<boolean> {
+  try {
+    // 먼저 멤버들의 groupId를 null로 설정 (onDelete: SetNull이 처리하지만 명시적으로)
+    await prisma.user.updateMany({
+      where: { groupId: id },
+      data: { groupId: null },
+    });
 
-  const group = index.groups[idx];
-  for (const memberId of group.memberIds) {
-    setUserGroup(memberId, undefined);
+    await prisma.group.delete({
+      where: { id },
+    });
+
+    return true;
+  } catch {
+    return false;
   }
-
-  index.groups.splice(idx, 1);
-  writeGroups(index);
-  return true;
 }

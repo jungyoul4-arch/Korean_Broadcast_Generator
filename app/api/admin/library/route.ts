@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url);
-  const result = listAllProblems({
+  const result = await listAllProblems({
     subject: searchParams.get("subject") || undefined,
     unitName: searchParams.get("unit") || undefined,
     type: searchParams.get("type") || undefined,

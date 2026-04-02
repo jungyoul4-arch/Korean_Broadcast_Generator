@@ -11,7 +11,7 @@ async function requireAdmin() {
 /** GET /api/admin/users — 전체 유저 목록 */
 export async function GET() {
   if (!(await requireAdmin())) return NextResponse.json({ error: "권한 없음" }, { status: 403 });
-  return NextResponse.json({ users: listUsers() });
+  return NextResponse.json({ users: await listUsers() });
 }
 
 /** POST /api/admin/users — 유저 생성 */
@@ -54,7 +54,7 @@ export async function DELETE(request: NextRequest) {
   try {
     const { id } = await request.json();
     if (!id) return NextResponse.json({ error: "유저 ID 필요" }, { status: 400 });
-    deleteUser(id);
+    await deleteUser(id);
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "삭제 오류";

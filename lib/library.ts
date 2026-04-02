@@ -1,11 +1,13 @@
 /**
- * 라이브러리 — 유저별 문제 저장·검색·태깅 + 그룹 통합
- * 저장소: data/libraries/{userId}/library.json + problems/{id}/
+ * 라이브러리 — PostgreSQL + Prisma 기반 (파일은 Volume 유지)
+ * 메타데이터: PostgreSQL
+ * 파일: data/libraries/{userId}/problems/{id}/
  */
 import fs from "fs";
 import path from "path";
+import { ItemType, Prisma } from "@prisma/client";
+import { prisma } from "./prisma";
 import { getGroupByUserId } from "./groups";
-import { getUserById } from "./users";
 
 // ── 타입 ──────────────────────────────────────
 
@@ -35,11 +37,6 @@ export interface SavedProblem {
   bodyHtml: string;
   headerText?: string;
   footerText?: string;
-}
-
-export interface LibraryIndex {
-  version: number;
-  problems: SavedProblem[];
 }
 
 export interface SaveProblemInput {
@@ -75,40 +72,81 @@ export interface LibraryFilter {
   limit?: number;
 }
 
-// ── 경로 헬퍼 (유저별) ──────────────────────────
+// ── 경로 헬퍼 (파일 저장용) ──────────────────────
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const LIBRARIES_DIR = path.join(DATA_DIR, "libraries");
 
-function userLibDir(userId: string) {
-  return path.join(LIBRARIES_DIR, userId);
-}
 function userProblemsDir(userId: string) {
   return path.join(LIBRARIES_DIR, userId, "problems");
 }
-function userIndexPath(userId: string) {
-  return path.join(LIBRARIES_DIR, userId, "library.json");
-}
 
 function ensureUserDirs(userId: string) {
-  const libDir = userLibDir(userId);
   const probDir = userProblemsDir(userId);
-  if (!fs.existsSync(libDir)) fs.mkdirSync(libDir, { recursive: true });
   if (!fs.existsSync(probDir)) fs.mkdirSync(probDir, { recursive: true });
 }
 
-// ── 인덱스 읽기/쓰기 ─────────────────────────
+// ── ItemType 변환 ────────────────────────────
 
-function readIndex(userId: string): LibraryIndex {
-  ensureUserDirs(userId);
-  const p = userIndexPath(userId);
-  if (!fs.existsSync(p)) return { version: 1, problems: [] };
-  return JSON.parse(fs.readFileSync(p, "utf-8"));
+function toItemTypeString(itemType: ItemType): "problem" | "lecture-note" {
+  return itemType === ItemType.LECTURE_NOTE ? "lecture-note" : "problem";
 }
 
-function writeIndex(userId: string, index: LibraryIndex) {
-  ensureUserDirs(userId);
-  fs.writeFileSync(userIndexPath(userId), JSON.stringify(index, null, 2), "utf-8");
+function toItemTypeEnum(itemType: "problem" | "lecture-note"): ItemType {
+  return itemType === "lecture-note" ? ItemType.LECTURE_NOTE : ItemType.PROBLEM;
+}
+
+// ── Prisma → 기존 인터페이스 변환 ──────────────
+
+function toSavedProblem(
+  dbProblem: {
+    id: string;
+    ownerId: string;
+    itemType: ItemType;
+    linkedProblemNumber: number | null;
+    subject: string;
+    unitName: string;
+    type: string;
+    points: number;
+    difficulty: number;
+    source: string;
+    tags: string[];
+    bodyHtml: string;
+    headerText: string | null;
+    footerText: string | null;
+    hasOriginal: boolean;
+    hasProblemPng: boolean;
+    hasContiPng: boolean;
+    hasHtml: boolean;
+    hasContiHtml: boolean;
+    createdAt: Date;
+    owner?: { displayName: string } | null;
+  },
+  ownerName?: string
+): SavedProblem {
+  return {
+    id: dbProblem.id,
+    createdAt: dbProblem.createdAt.toISOString(),
+    ownerId: dbProblem.ownerId,
+    ownerName: ownerName || dbProblem.owner?.displayName,
+    itemType: toItemTypeString(dbProblem.itemType),
+    linkedProblemNumber: dbProblem.linkedProblemNumber || undefined,
+    subject: dbProblem.subject,
+    unitName: dbProblem.unitName,
+    type: dbProblem.type,
+    points: dbProblem.points,
+    difficulty: dbProblem.difficulty,
+    source: dbProblem.source,
+    tags: dbProblem.tags,
+    hasOriginal: dbProblem.hasOriginal,
+    hasProblemPng: dbProblem.hasProblemPng,
+    hasContiPng: dbProblem.hasContiPng,
+    hasHtml: dbProblem.hasHtml,
+    hasContiHtml: dbProblem.hasContiHtml,
+    bodyHtml: dbProblem.bodyHtml,
+    headerText: dbProblem.headerText || undefined,
+    footerText: dbProblem.footerText || undefined,
+  };
 }
 
 // ── 자동 태그 생성 ────────────────────────────
@@ -128,7 +166,11 @@ export function generateAutoTags(input: {
   if (input.type) tags.push(input.type);
 
   const diffLabels: Record<number, string> = {
-    1: "기본", 2: "쉬움", 3: "보통", 4: "준킬러", 5: "킬러",
+    1: "기본",
+    2: "쉬움",
+    3: "보통",
+    4: "준킬러",
+    5: "킬러",
   };
   if (input.difficulty && diffLabels[input.difficulty]) {
     tags.push(diffLabels[input.difficulty]);
@@ -137,8 +179,11 @@ export function generateAutoTags(input: {
 
   if (input.source) {
     const patterns: RegExp[] = [
-      /(\d{4})/, /(수능|모의고사|학력평가|교육청|평가원)/,
-      /(6월|9월|3월|4월|7월|10월|11월)/, /(고[123]|중[123])/, /(기출)/,
+      /(\d{4})/,
+      /(수능|모의고사|학력평가|교육청|평가원)/,
+      /(6월|9월|3월|4월|7월|10월|11월)/,
+      /(고[123]|중[123])/,
+      /(기출)/,
     ];
     for (const pat of patterns) {
       const m = input.source.match(pat);
@@ -157,15 +202,19 @@ function generateId(): string {
   return `${date}-${rand}`;
 }
 
-// ── CRUD (유저별) ─────────────────────────────
+// ── CRUD ─────────────────────────────────────
 
-/** 문제 저장 (유저의 라이브러리에) */
-export function saveProblem(userId: string, input: SaveProblemInput): SavedProblem {
-  const index = readIndex(userId);
+/** 문제 저장 (DB + 파일) */
+export async function saveProblem(
+  userId: string,
+  input: SaveProblemInput
+): Promise<SavedProblem> {
   const id = generateId();
   const problemDir = path.join(userProblemsDir(userId), id);
+  ensureUserDirs(userId);
   fs.mkdirSync(problemDir, { recursive: true });
 
+  // 파일 저장 (Volume)
   if (input.originalImageBase64) {
     fs.writeFileSync(
       path.join(problemDir, "original.png"),
@@ -187,6 +236,7 @@ export function saveProblem(userId: string, input: SaveProblemInput): SavedProbl
     fs.writeFileSync(path.join(problemDir, "conti.html"), input.contiHtml, "utf-8");
   }
 
+  // 태그 생성
   const itemType = input.itemType || "problem";
   const autoTags = generateAutoTags({
     subject: input.subject,
@@ -200,276 +250,353 @@ export function saveProblem(userId: string, input: SaveProblemInput): SavedProbl
   if (itemType === "lecture-note") autoTags.push("강의노트");
   const allTags = [...new Set([...autoTags, ...(input.tags || [])])];
 
-  const user = getUserById(userId);
-  const saved: SavedProblem = {
-    id,
-    createdAt: new Date().toISOString(),
-    ownerId: userId,
-    ownerName: user?.displayName,
-    itemType,
-    linkedProblemNumber: input.linkedProblemNumber,
-    subject: input.subject || "",
-    unitName: input.unitName || "",
-    type: input.type || "",
-    points: input.points || 0,
-    difficulty: input.difficulty || 0,
-    source: input.source || "",
-    tags: allTags,
-    hasOriginal: !!input.originalImageBase64,
-    hasProblemPng: true,
-    hasContiPng: !!input.contiPngBase64,
-    hasHtml: true,
-    hasContiHtml: !!input.contiHtml,
-    bodyHtml: input.bodyHtml || "",
-    headerText: input.headerText,
-    footerText: input.footerText,
-  };
+  // DB 저장
+  const dbProblem = await prisma.savedProblem.create({
+    data: {
+      id,
+      ownerId: userId,
+      itemType: toItemTypeEnum(itemType),
+      linkedProblemNumber: input.linkedProblemNumber || null,
+      subject: input.subject || "",
+      unitName: input.unitName || "",
+      type: input.type || "",
+      points: input.points || 0,
+      difficulty: input.difficulty || 0,
+      source: input.source || "",
+      tags: allTags,
+      bodyHtml: input.bodyHtml || "",
+      headerText: input.headerText || null,
+      footerText: input.footerText || null,
+      hasOriginal: !!input.originalImageBase64,
+      hasProblemPng: true,
+      hasContiPng: !!input.contiPngBase64,
+      hasHtml: true,
+      hasContiHtml: !!input.contiHtml,
+    },
+    include: { owner: { select: { displayName: true } } },
+  });
 
+  const saved = toSavedProblem(dbProblem);
+
+  // meta.json 백업 (선택적)
   fs.writeFileSync(
     path.join(problemDir, "meta.json"),
     JSON.stringify(saved, null, 2),
     "utf-8"
   );
 
-  index.problems.push(saved);
-  writeIndex(userId, index);
   return saved;
 }
 
-// ── 복수 유저 라이브러리 합산 ─────────────────
-
-function mergeLibraries(userIds: string[]): SavedProblem[] {
-  const all: SavedProblem[] = [];
-  for (const uid of userIds) {
-    const index = readIndex(uid);
-    const user = getUserById(uid);
-    for (const p of index.problems) {
-      all.push({ ...p, ownerId: uid, ownerName: user?.displayName || uid });
-    }
-  }
-  return all;
-}
-
 /** 라이브러리에 접근 가능한 유저 ID 목록 */
-function getAccessibleUserIds(userId: string): string[] {
-  const group = getGroupByUserId(userId);
+async function getAccessibleUserIds(userId: string): Promise<string[]> {
+  const group = await getGroupByUserId(userId);
   if (group) {
-    // 그룹원 전체 (자신 포함)
     return [...new Set([userId, ...group.memberIds])];
   }
   return [userId];
 }
 
 /** 목록 조회 (유저 + 그룹 통합) */
-export function listProblems(userId: string, filter: LibraryFilter = {}): {
+export async function listProblems(
+  userId: string,
+  filter: LibraryFilter = {}
+): Promise<{
   problems: SavedProblem[];
   total: number;
   subjects: string[];
   units: string[];
   allTags: string[];
   owners: { id: string; name: string }[];
-} {
-  const userIds = getAccessibleUserIds(userId);
-  let results = mergeLibraries(userIds);
+}> {
+  const userIds = await getAccessibleUserIds(userId);
 
-  // 필터링
-  if (filter.itemType) results = results.filter((p) => (p.itemType || "problem") === filter.itemType);
-  if (filter.subject) results = results.filter((p) => p.subject === filter.subject);
-  if (filter.unitName) results = results.filter((p) => p.unitName === filter.unitName);
-  if (filter.type) results = results.filter((p) => p.type === filter.type);
-  if (filter.difficulty) results = results.filter((p) => p.difficulty === filter.difficulty);
-  if (filter.tag) results = results.filter((p) => p.tags.includes(filter.tag!));
-  if (filter.ownerId) results = results.filter((p) => p.ownerId === filter.ownerId);
+  // Prisma where 조건 구성
+  const where: Prisma.SavedProblemWhereInput = {
+    ownerId: { in: userIds },
+  };
+
+  if (filter.itemType) {
+    where.itemType = toItemTypeEnum(filter.itemType);
+  }
+  if (filter.subject) {
+    where.subject = filter.subject;
+  }
+  if (filter.unitName) {
+    where.unitName = filter.unitName;
+  }
+  if (filter.type) {
+    where.type = filter.type;
+  }
+  if (filter.difficulty) {
+    where.difficulty = filter.difficulty;
+  }
+  if (filter.tag) {
+    where.tags = { has: filter.tag };
+  }
+  if (filter.ownerId) {
+    where.ownerId = filter.ownerId;
+  }
   if (filter.search) {
     const q = filter.search.toLowerCase();
-    results = results.filter(
-      (p) =>
-        p.bodyHtml.toLowerCase().includes(q) ||
-        p.source.toLowerCase().includes(q) ||
-        p.subject.toLowerCase().includes(q) ||
-        p.unitName.toLowerCase().includes(q) ||
-        p.tags.some((t) => t.toLowerCase().includes(q))
-    );
+    where.OR = [
+      { bodyHtml: { contains: q, mode: "insensitive" } },
+      { source: { contains: q, mode: "insensitive" } },
+      { subject: { contains: q, mode: "insensitive" } },
+      { unitName: { contains: q, mode: "insensitive" } },
+      { tags: { hasSome: [filter.search] } },
+    ];
   }
 
-  results.sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
+  // 전체 개수
+  const total = await prisma.savedProblem.count({ where });
 
-  const total = results.length;
-  const subjects = [...new Set(results.map((p) => p.subject).filter(Boolean))];
+  // 집계 데이터
+  const allProblems = await prisma.savedProblem.findMany({
+    where: { ownerId: { in: userIds } },
+    select: {
+      subject: true,
+      unitName: true,
+      tags: true,
+      ownerId: true,
+      owner: { select: { displayName: true } },
+    },
+  });
+
+  const subjects = [...new Set(allProblems.map((p) => p.subject).filter(Boolean))];
   const units = filter.subject
-    ? [...new Set(results.filter((p) => p.subject === filter.subject).map((p) => p.unitName).filter(Boolean))]
-    : [...new Set(results.map((p) => p.unitName).filter(Boolean))];
-  const allTags = [...new Set(results.flatMap((p) => p.tags))].sort();
-  const owners = [...new Map(results.map((p) => [p.ownerId, { id: p.ownerId, name: p.ownerName || p.ownerId }])).values()];
+    ? [
+        ...new Set(
+          allProblems
+            .filter((p) => p.subject === filter.subject)
+            .map((p) => p.unitName)
+            .filter(Boolean)
+        ),
+      ]
+    : [...new Set(allProblems.map((p) => p.unitName).filter(Boolean))];
+  const allTags = [...new Set(allProblems.flatMap((p) => p.tags))].sort();
+  const owners = [
+    ...new Map(
+      allProblems.map((p) => [
+        p.ownerId,
+        { id: p.ownerId, name: p.owner?.displayName || p.ownerId },
+      ])
+    ).values(),
+  ];
 
+  // 페이지네이션된 결과
   const offset = filter.offset || 0;
   const limit = filter.limit || 50;
-  results = results.slice(offset, offset + limit);
 
-  return { problems: results, total, subjects, units, allTags, owners };
+  const problems = await prisma.savedProblem.findMany({
+    where,
+    include: { owner: { select: { displayName: true } } },
+    orderBy: { createdAt: "desc" },
+    skip: offset,
+    take: limit,
+  });
+
+  return {
+    problems: problems.map((p) => toSavedProblem(p)),
+    total,
+    subjects,
+    units,
+    allTags,
+    owners,
+  };
 }
 
 /** 관리자: 전체 유저 라이브러리 조회 */
-export function listAllProblems(filter: LibraryFilter = {}): ReturnType<typeof listProblems> {
-  if (!fs.existsSync(LIBRARIES_DIR)) {
-    return { problems: [], total: 0, subjects: [], units: [], allTags: [], owners: [] };
+export async function listAllProblems(
+  filter: LibraryFilter = {}
+): Promise<ReturnType<typeof listProblems>> {
+  // Prisma where 조건 구성
+  const where: Prisma.SavedProblemWhereInput = {};
+
+  if (filter.itemType) {
+    where.itemType = toItemTypeEnum(filter.itemType);
   }
-  const allUserIds = fs.readdirSync(LIBRARIES_DIR).filter((d) => {
-    return fs.statSync(path.join(LIBRARIES_DIR, d)).isDirectory();
-  });
-
-  let results = mergeLibraries(allUserIds);
-
-  if (filter.itemType) results = results.filter((p) => (p.itemType || "problem") === filter.itemType);
-  if (filter.subject) results = results.filter((p) => p.subject === filter.subject);
-  if (filter.unitName) results = results.filter((p) => p.unitName === filter.unitName);
-  if (filter.type) results = results.filter((p) => p.type === filter.type);
-  if (filter.difficulty) results = results.filter((p) => p.difficulty === filter.difficulty);
-  if (filter.tag) results = results.filter((p) => p.tags.includes(filter.tag!));
-  if (filter.ownerId) results = results.filter((p) => p.ownerId === filter.ownerId);
+  if (filter.subject) {
+    where.subject = filter.subject;
+  }
+  if (filter.unitName) {
+    where.unitName = filter.unitName;
+  }
+  if (filter.type) {
+    where.type = filter.type;
+  }
+  if (filter.difficulty) {
+    where.difficulty = filter.difficulty;
+  }
+  if (filter.tag) {
+    where.tags = { has: filter.tag };
+  }
+  if (filter.ownerId) {
+    where.ownerId = filter.ownerId;
+  }
   if (filter.search) {
     const q = filter.search.toLowerCase();
-    results = results.filter(
-      (p) =>
-        p.bodyHtml.toLowerCase().includes(q) ||
-        p.source.toLowerCase().includes(q) ||
-        p.subject.toLowerCase().includes(q) ||
-        p.unitName.toLowerCase().includes(q) ||
-        p.tags.some((t) => t.toLowerCase().includes(q))
-    );
+    where.OR = [
+      { bodyHtml: { contains: q, mode: "insensitive" } },
+      { source: { contains: q, mode: "insensitive" } },
+      { subject: { contains: q, mode: "insensitive" } },
+      { unitName: { contains: q, mode: "insensitive" } },
+      { tags: { hasSome: [filter.search] } },
+    ];
   }
 
-  results.sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
+  const total = await prisma.savedProblem.count({ where });
 
-  const total = results.length;
-  const subjects = [...new Set(results.map((p) => p.subject).filter(Boolean))];
-  const units = [...new Set(results.map((p) => p.unitName).filter(Boolean))];
-  const allTags = [...new Set(results.flatMap((p) => p.tags))].sort();
-  const owners = [...new Map(results.map((p) => [p.ownerId, { id: p.ownerId, name: p.ownerName || p.ownerId }])).values()];
+  // 집계 데이터
+  const allProblems = await prisma.savedProblem.findMany({
+    select: {
+      subject: true,
+      unitName: true,
+      tags: true,
+      ownerId: true,
+      owner: { select: { displayName: true } },
+    },
+  });
+
+  const subjects = [...new Set(allProblems.map((p) => p.subject).filter(Boolean))];
+  const units = [...new Set(allProblems.map((p) => p.unitName).filter(Boolean))];
+  const allTags = [...new Set(allProblems.flatMap((p) => p.tags))].sort();
+  const owners = [
+    ...new Map(
+      allProblems.map((p) => [
+        p.ownerId,
+        { id: p.ownerId, name: p.owner?.displayName || p.ownerId },
+      ])
+    ).values(),
+  ];
 
   const offset = filter.offset || 0;
   const limit = filter.limit || 50;
-  results = results.slice(offset, offset + limit);
 
-  return { problems: results, total, subjects, units, allTags, owners };
-}
+  const problems = await prisma.savedProblem.findMany({
+    where,
+    include: { owner: { select: { displayName: true } } },
+    orderBy: { createdAt: "desc" },
+    skip: offset,
+    take: limit,
+  });
 
-/** 문제 파일 찾기 (유저 폴더 순회) */
-function findProblemPath(problemId: string, accessibleUserIds?: string[]): { userId: string; problemDir: string } | null {
-  if (!fs.existsSync(LIBRARIES_DIR)) return null;
-  const dirs = accessibleUserIds || fs.readdirSync(LIBRARIES_DIR);
-  for (const uid of dirs) {
-    const problemDir = path.join(LIBRARIES_DIR, uid, "problems", problemId);
-    if (fs.existsSync(problemDir)) return { userId: uid, problemDir };
-  }
-  return null;
+  return {
+    problems: problems.map((p) => toSavedProblem(p)),
+    total,
+    subjects,
+    units,
+    allTags,
+    owners,
+  };
 }
 
 /** 개별 문제 조회 */
-export function getProblem(problemId: string, userId?: string): SavedProblem | null {
-  const userIds = userId ? getAccessibleUserIds(userId) : undefined;
-  const found = findProblemPath(problemId, userIds);
-  if (!found) return null;
-  const metaPath = path.join(found.problemDir, "meta.json");
-  if (!fs.existsSync(metaPath)) return null;
-  return JSON.parse(fs.readFileSync(metaPath, "utf-8"));
+export async function getProblem(
+  problemId: string,
+  userId?: string
+): Promise<SavedProblem | null> {
+  const where: Prisma.SavedProblemWhereInput = {
+    id: problemId,
+  };
+
+  if (userId) {
+    const userIds = await getAccessibleUserIds(userId);
+    where.ownerId = { in: userIds };
+  }
+
+  const problem = await prisma.savedProblem.findFirst({
+    where,
+    include: { owner: { select: { displayName: true } } },
+  });
+
+  return problem ? toSavedProblem(problem) : null;
 }
 
-/** 문제 파일 읽기 (PNG) */
-export function getProblemFile(
+/** 문제 파일 읽기 (PNG) - 파일 시스템에서 직접 읽기 */
+export async function getProblemFile(
   problemId: string,
   fileType: "original" | "problem" | "conti",
   userId?: string
-): Buffer | null {
-  const userIds = userId ? getAccessibleUserIds(userId) : undefined;
-  const found = findProblemPath(problemId, userIds);
-  if (!found) return null;
+): Promise<Buffer | null> {
+  // DB에서 문제 조회하여 ownerId 확인
+  const problem = await getProblem(problemId, userId);
+  if (!problem) return null;
+
   const filenames: Record<string, string> = {
     original: "original.png",
     problem: "problem.png",
     conti: "conti.png",
   };
-  const filePath = path.join(found.problemDir, filenames[fileType]);
+
+  const filePath = path.join(
+    userProblemsDir(problem.ownerId),
+    problemId,
+    filenames[fileType]
+  );
+
   if (!fs.existsSync(filePath)) return null;
   return fs.readFileSync(filePath);
 }
 
 /** 태그 수정 (본인 문제만) */
-export function updateProblemTags(
+export async function updateProblemTags(
   userId: string,
   problemId: string,
   tags: string[]
-): SavedProblem | null {
-  const index = readIndex(userId);
-  const problem = index.problems.find((p) => p.id === problemId);
-  if (!problem) return null;
+): Promise<SavedProblem | null> {
+  // 본인 문제인지 확인
+  const existing = await prisma.savedProblem.findFirst({
+    where: { id: problemId, ownerId: userId },
+  });
 
-  problem.tags = [...new Set(tags)];
+  if (!existing) return null;
+
+  const uniqueTags = [...new Set(tags)];
+
+  const updated = await prisma.savedProblem.update({
+    where: { id: problemId },
+    data: { tags: uniqueTags },
+    include: { owner: { select: { displayName: true } } },
+  });
+
+  // meta.json 백업 업데이트
   const metaPath = path.join(userProblemsDir(userId), problemId, "meta.json");
   if (fs.existsSync(metaPath)) {
-    const meta = JSON.parse(fs.readFileSync(metaPath, "utf-8"));
-    meta.tags = problem.tags;
-    fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), "utf-8");
+    try {
+      const meta = JSON.parse(fs.readFileSync(metaPath, "utf-8"));
+      meta.tags = uniqueTags;
+      fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), "utf-8");
+    } catch {
+      // 무시
+    }
   }
-  writeIndex(userId, index);
-  return problem;
+
+  return toSavedProblem(updated);
 }
 
 /** 문제 삭제 (본인 문제만) */
-export function deleteProblem(userId: string, problemId: string): boolean {
-  const index = readIndex(userId);
-  const idx = index.problems.findIndex((p) => p.id === problemId);
-  if (idx === -1) return false;
+export async function deleteProblem(
+  userId: string,
+  problemId: string
+): Promise<boolean> {
+  // 본인 문제인지 확인
+  const existing = await prisma.savedProblem.findFirst({
+    where: { id: problemId, ownerId: userId },
+  });
 
-  index.problems.splice(idx, 1);
-  writeIndex(userId, index);
+  if (!existing) return false;
 
+  // DB 삭제
+  await prisma.savedProblem.delete({
+    where: { id: problemId },
+  });
+
+  // 파일 삭제
   const problemDir = path.join(userProblemsDir(userId), problemId);
   if (fs.existsSync(problemDir)) {
     fs.rmSync(problemDir, { recursive: true, force: true });
   }
+
   return true;
-}
-
-// ── 마이그레이션 (기존 data/library.json → admin 유저) ──
-
-export function migrateOldLibrary(adminUserId: string): number {
-  const oldIndexPath = path.join(DATA_DIR, "library.json");
-  const oldProblemsDir = path.join(DATA_DIR, "problems");
-
-  if (!fs.existsSync(oldIndexPath)) return 0;
-
-  const oldIndex: LibraryIndex = JSON.parse(fs.readFileSync(oldIndexPath, "utf-8"));
-  if (oldIndex.problems.length === 0) return 0;
-
-  ensureUserDirs(adminUserId);
-  const newIndex = readIndex(adminUserId);
-
-  for (const problem of oldIndex.problems) {
-    const oldDir = path.join(oldProblemsDir, problem.id);
-    const newDir = path.join(userProblemsDir(adminUserId), problem.id);
-
-    if (fs.existsSync(oldDir) && !fs.existsSync(newDir)) {
-      fs.cpSync(oldDir, newDir, { recursive: true });
-    }
-
-    if (!newIndex.problems.find((p) => p.id === problem.id)) {
-      newIndex.problems.push({ ...problem, ownerId: adminUserId });
-    }
-  }
-
-  writeIndex(adminUserId, newIndex);
-
-  // 기존 파일 정리
-  fs.renameSync(oldIndexPath, oldIndexPath + ".bak");
-  if (fs.existsSync(oldProblemsDir)) {
-    fs.renameSync(oldProblemsDir, oldProblemsDir + ".bak");
-  }
-
-  console.log(`마이그레이션 완료: ${oldIndex.problems.length}개 문제 → ${adminUserId}`);
-  return oldIndex.problems.length;
 }

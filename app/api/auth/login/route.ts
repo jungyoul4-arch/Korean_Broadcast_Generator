@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/users";
 import { createToken, createSessionCookie } from "@/lib/auth";
-import { migrateOldLibrary } from "@/lib/library";
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,11 +12,6 @@ export async function POST(request: NextRequest) {
     const user = await authenticateUser(username, password);
     if (!user) {
       return NextResponse.json({ error: "아이디 또는 비밀번호가 올바르지 않습니다" }, { status: 401 });
-    }
-
-    // 첫 로그인 시 기존 라이브러리 마이그레이션
-    if (user.role === "admin") {
-      try { migrateOldLibrary(user.id); } catch {}
     }
 
     const token = await createToken({

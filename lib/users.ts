@@ -1,9 +1,9 @@
 /**
- * 유저 관리 — data/users.json 기반 CRUD
+ * 유저 관리 — PostgreSQL + Prisma 기반 CRUD
  */
-import fs from "fs";
-import path from "path";
 import bcrypt from "bcryptjs";
+import { Role } from "@prisma/client";
+import { prisma } from "./prisma";
 
 export interface User {
   id: string;
@@ -15,54 +15,58 @@ export interface User {
   createdAt: string;
 }
 
-export interface UsersIndex {
-  users: User[];
-}
-
-const DATA_DIR = path.join(process.cwd(), "data");
-const USERS_PATH = path.join(DATA_DIR, "users.json");
 const BCRYPT_ROUNDS = 10;
 
-function ensureDir() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+/** Prisma Role enum ↔ string 변환 */
+function toRoleString(role: Role): "admin" | "user" {
+  return role === Role.ADMIN ? "admin" : "user";
 }
 
-function readUsers(): UsersIndex {
-  ensureDir();
-  if (!fs.existsSync(USERS_PATH)) {
-    return { users: [] };
-  }
-  return JSON.parse(fs.readFileSync(USERS_PATH, "utf-8"));
+function toRoleEnum(role: "admin" | "user"): Role {
+  return role === "admin" ? Role.ADMIN : Role.USER;
 }
 
-function writeUsers(index: UsersIndex) {
-  ensureDir();
-  fs.writeFileSync(USERS_PATH, JSON.stringify(index, null, 2), "utf-8");
+/** Prisma User → 기존 User 인터페이스 변환 */
+function toUser(dbUser: {
+  id: string;
+  username: string;
+  passwordHash: string;
+  displayName: string;
+  role: Role;
+  groupId: string | null;
+  createdAt: Date;
+}): User {
+  return {
+    id: dbUser.id,
+    username: dbUser.username,
+    passwordHash: dbUser.passwordHash,
+    displayName: dbUser.displayName,
+    role: toRoleString(dbUser.role),
+    groupId: dbUser.groupId || undefined,
+    createdAt: dbUser.createdAt.toISOString(),
+  };
 }
 
-function generateId(): string {
-  return `u-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-}
-
-/** 초기 admin 계정 자동 생성 (users.json 없거나 비어있을 때) */
+/** 초기 admin 계정 자동 생성 */
 export async function ensureAdminExists(): Promise<void> {
-  const index = readUsers();
-  const hasAdmin = index.users.some((u) => u.role === "admin");
-  if (hasAdmin) return;
+  const adminCount = await prisma.user.count({
+    where: { role: Role.ADMIN },
+  });
+
+  if (adminCount > 0) return;
 
   const password = process.env.ADMIN_PASSWORD || "admin1234";
   const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
-  index.users.push({
-    id: generateId(),
-    username: "admin",
-    passwordHash: hash,
-    displayName: "관리자",
-    role: "admin",
-    createdAt: new Date().toISOString(),
+  await prisma.user.create({
+    data: {
+      username: "admin",
+      passwordHash: hash,
+      displayName: "관리자",
+      role: Role.ADMIN,
+    },
   });
 
-  writeUsers(index);
   console.log("초기 관리자 계정 생성됨 (admin / ADMIN_PASSWORD 환경변수)");
 }
 
@@ -72,30 +76,49 @@ export async function authenticateUser(
   password: string
 ): Promise<User | null> {
   await ensureAdminExists();
-  const index = readUsers();
-  const user = index.users.find((u) => u.username === username);
-  if (!user) return null;
 
-  const valid = await bcrypt.compare(password, user.passwordHash);
-  return valid ? user : null;
+  const dbUser = await prisma.user.findUnique({
+    where: { username },
+  });
+
+  if (!dbUser) return null;
+
+  const valid = await bcrypt.compare(password, dbUser.passwordHash);
+  return valid ? toUser(dbUser) : null;
 }
 
 /** 유저 조회 (ID) */
-export function getUserById(id: string): User | null {
-  const index = readUsers();
-  return index.users.find((u) => u.id === id) || null;
+export async function getUserById(id: string): Promise<User | null> {
+  const dbUser = await prisma.user.findUnique({
+    where: { id },
+  });
+
+  return dbUser ? toUser(dbUser) : null;
 }
 
 /** 유저 조회 (username) */
-export function getUserByUsername(username: string): User | null {
-  const index = readUsers();
-  return index.users.find((u) => u.username === username) || null;
+export async function getUserByUsername(username: string): Promise<User | null> {
+  const dbUser = await prisma.user.findUnique({
+    where: { username },
+  });
+
+  return dbUser ? toUser(dbUser) : null;
 }
 
 /** 전체 유저 목록 (비밀번호 제외) */
-export function listUsers(): Omit<User, "passwordHash">[] {
-  const index = readUsers();
-  return index.users.map(({ passwordHash: _, ...rest }) => rest);
+export async function listUsers(): Promise<Omit<User, "passwordHash">[]> {
+  const users = await prisma.user.findMany({
+    orderBy: { createdAt: "desc" },
+  });
+
+  return users.map((u) => ({
+    id: u.id,
+    username: u.username,
+    displayName: u.displayName,
+    role: toRoleString(u.role),
+    groupId: u.groupId || undefined,
+    createdAt: u.createdAt.toISOString(),
+  }));
 }
 
 /** 유저 생성 (관리자용) */
@@ -105,27 +128,33 @@ export async function createUser(input: {
   displayName: string;
   role?: "admin" | "user";
 }): Promise<Omit<User, "passwordHash">> {
-  const index = readUsers();
+  const existing = await prisma.user.findUnique({
+    where: { username: input.username },
+  });
 
-  if (index.users.some((u) => u.username === input.username)) {
+  if (existing) {
     throw new Error("이미 존재하는 아이디입니다");
   }
 
   const hash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
-  const user: User = {
-    id: generateId(),
-    username: input.username,
-    passwordHash: hash,
-    displayName: input.displayName,
-    role: input.role || "user",
-    createdAt: new Date().toISOString(),
+
+  const user = await prisma.user.create({
+    data: {
+      username: input.username,
+      passwordHash: hash,
+      displayName: input.displayName,
+      role: toRoleEnum(input.role || "user"),
+    },
+  });
+
+  return {
+    id: user.id,
+    username: user.username,
+    displayName: user.displayName,
+    role: toRoleString(user.role),
+    groupId: user.groupId || undefined,
+    createdAt: user.createdAt.toISOString(),
   };
-
-  index.users.push(user);
-  writeUsers(index);
-
-  const { passwordHash: _, ...safe } = user;
-  return safe;
 }
 
 /** 유저 수정 (관리자용) */
@@ -138,48 +167,84 @@ export async function updateUser(
     password?: string;
   }
 ): Promise<Omit<User, "passwordHash"> | null> {
-  const index = readUsers();
-  const user = index.users.find((u) => u.id === id);
-  if (!user) return null;
+  const existing = await prisma.user.findUnique({
+    where: { id },
+  });
 
-  if (updates.displayName !== undefined) user.displayName = updates.displayName;
-  if (updates.role !== undefined) user.role = updates.role;
+  if (!existing) return null;
+
+  const data: {
+    displayName?: string;
+    role?: Role;
+    groupId?: string | null;
+    passwordHash?: string;
+  } = {};
+
+  if (updates.displayName !== undefined) {
+    data.displayName = updates.displayName;
+  }
+  if (updates.role !== undefined) {
+    data.role = toRoleEnum(updates.role);
+  }
   if (updates.groupId !== undefined) {
-    user.groupId = updates.groupId || undefined;
+    data.groupId = updates.groupId || null;
   }
   if (updates.password) {
-    user.passwordHash = await bcrypt.hash(updates.password, BCRYPT_ROUNDS);
+    data.passwordHash = await bcrypt.hash(updates.password, BCRYPT_ROUNDS);
   }
 
-  writeUsers(index);
-  const { passwordHash: _, ...safe } = user;
-  return safe;
+  const user = await prisma.user.update({
+    where: { id },
+    data,
+  });
+
+  return {
+    id: user.id,
+    username: user.username,
+    displayName: user.displayName,
+    role: toRoleString(user.role),
+    groupId: user.groupId || undefined,
+    createdAt: user.createdAt.toISOString(),
+  };
 }
 
 /** 유저의 그룹 설정 (그룹 관리에서 사용) */
-export function setUserGroup(userId: string, groupId: string | undefined): boolean {
-  const index = readUsers();
-  const user = index.users.find((u) => u.id === userId);
-  if (!user) return false;
-  user.groupId = groupId;
-  writeUsers(index);
-  return true;
+export async function setUserGroup(
+  userId: string,
+  groupId: string | undefined
+): Promise<boolean> {
+  try {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { groupId: groupId || null },
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** 유저 삭제 */
-export function deleteUser(id: string): boolean {
-  const index = readUsers();
-  const idx = index.users.findIndex((u) => u.id === id);
-  if (idx === -1) return false;
+export async function deleteUser(id: string): Promise<boolean> {
+  const user = await prisma.user.findUnique({
+    where: { id },
+  });
+
+  if (!user) return false;
 
   // admin은 최소 1명 유지
-  const user = index.users[idx];
-  if (user.role === "admin") {
-    const adminCount = index.users.filter((u) => u.role === "admin").length;
-    if (adminCount <= 1) throw new Error("마지막 관리자는 삭제할 수 없습니다");
+  if (user.role === Role.ADMIN) {
+    const adminCount = await prisma.user.count({
+      where: { role: Role.ADMIN },
+    });
+    if (adminCount <= 1) {
+      throw new Error("마지막 관리자는 삭제할 수 없습니다");
+    }
   }
 
-  index.users.splice(idx, 1);
-  writeUsers(index);
+  await prisma.user.delete({
+    where: { id },
+  });
+
   return true;
 }

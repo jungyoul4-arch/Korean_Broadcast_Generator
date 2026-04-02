@@ -11,7 +11,7 @@ async function requireAdmin() {
 /** GET — 전체 그룹 목록 */
 export async function GET() {
   if (!(await requireAdmin())) return NextResponse.json({ error: "권한 없음" }, { status: 403 });
-  return NextResponse.json({ groups: listGroups() });
+  return NextResponse.json({ groups: await listGroups() });
 }
 
 /** POST — 그룹 생성 */
@@ -22,6 +22,6 @@ export async function POST(request: NextRequest) {
   const { name, description } = await request.json();
   if (!name) return NextResponse.json({ error: "그룹 이름 필요" }, { status: 400 });
 
-  const group = createGroup({ name, description, createdBy: admin.userId });
+  const group = await createGroup({ name, description, createdBy: admin.userId });
   return NextResponse.json({ success: true, group });
 }

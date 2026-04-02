@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const itemTypeParam = searchParams.get("itemType");
-  const result = listProblems(session.userId, {
+  const result = await listProblems(session.userId, {
     subject: searchParams.get("subject") || undefined,
     unitName: searchParams.get("unit") || undefined,
     type: searchParams.get("type") || undefined,
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "변환된 PNG가 필요합니다" }, { status: 400 });
     }
 
-    const saved = saveProblem(session.userId, {
+    const saved = await saveProblem(session.userId, {
       itemType: body.itemType || "problem",
       linkedProblemNumber: body.linkedProblemNumber,
       subject: body.subject || "",
