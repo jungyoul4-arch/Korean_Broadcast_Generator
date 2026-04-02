@@ -75,6 +75,21 @@ COPY --from=builder /app/prisma ./prisma
 # public 폴더 복사
 COPY --from=builder /app/public ./public
 
+# 마이그레이션 스크립트 및 ts-node 복사
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/node_modules/ts-node ./node_modules/ts-node
+COPY --from=builder /app/node_modules/@tsconfig ./node_modules/@tsconfig
+COPY --from=builder /app/node_modules/@cspotcode ./node_modules/@cspotcode
+COPY --from=builder /app/node_modules/acorn-walk ./node_modules/acorn-walk
+COPY --from=builder /app/node_modules/acorn ./node_modules/acorn
+COPY --from=builder /app/node_modules/arg ./node_modules/arg
+COPY --from=builder /app/node_modules/create-require ./node_modules/create-require
+COPY --from=builder /app/node_modules/diff ./node_modules/diff
+COPY --from=builder /app/node_modules/make-error ./node_modules/make-error
+COPY --from=builder /app/node_modules/v8-compile-cache-lib ./node_modules/v8-compile-cache-lib
+COPY --from=builder /app/node_modules/yn ./node_modules/yn
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
+
 # data 초기 파일 복사 (Volume 마운트 시 Volume 내용이 우선됨)
 # 파일 저장소(problems)는 계속 Volume 사용
 COPY --from=builder /app/data ./data-init
