@@ -95,40 +95,8 @@ COPY --from=builder /app/tsconfig.json ./tsconfig.json
 # 파일 저장소(problems)는 계속 Volume 사용
 COPY --from=builder /app/data ./data-init
 
-# 시작 스크립트 생성
-COPY <<'EOF' /app/start.sh
-#!/bin/sh
-set -e
-
-# 파일 저장소 디렉토리 초기화 (Volume이 비어있을 때)
-if [ ! -d /app/data/libraries ]; then
-  echo "Initializing data directory..."
-  mkdir -p /app/data/libraries
-  if [ -d /app/data-init/libraries ]; then
-    cp -r /app/data-init/libraries/* /app/data/libraries/ 2>/dev/null || true
-  fi
-fi
-
-# Prisma 스키마 동기화
-echo "Syncing database schema..."
-npx prisma db push --skip-generate
-
-# JSON → PostgreSQL 마이그레이션 (최초 1회만)
-if [ ! -f /app/data/.migrated ]; then
-  if [ -f /app/data/users.json ]; then
-    echo "Running JSON to PostgreSQL migration..."
-    npx ts-node scripts/migrate-to-postgres.ts
-    touch /app/data/.migrated
-    echo "Migration completed!"
-  else
-    echo "No JSON files to migrate, skipping..."
-    touch /app/data/.migrated
-  fi
-fi
-
-# 서버 시작
-exec node server.js
-EOF
+# 시작 스크립트 복사
+COPY --from=builder /app/start.sh /app/start.sh
 RUN chmod +x /app/start.sh
 
 EXPOSE 3000
