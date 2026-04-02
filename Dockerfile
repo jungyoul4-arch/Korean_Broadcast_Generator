@@ -95,9 +95,9 @@ COPY --from=builder /app/tsconfig.json ./tsconfig.json
 # 파일 저장소(problems)는 계속 Volume 사용
 COPY --from=builder /app/data ./data-init
 
-# 시작 스크립트 복사
+# 시작 스크립트 복사 (Windows CRLF → Unix LF 변환)
 COPY --from=builder /app/start.sh /app/start.sh
-RUN chmod +x /app/start.sh
+RUN sed -i 's/\r$//' /app/start.sh && chmod +x /app/start.sh
 
 EXPOSE 3000
 
