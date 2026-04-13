@@ -727,23 +727,23 @@ ${bgConfig.overlayBefore ? `body::before { ${bgConfig.overlayBefore} }` : ''}
   font-family: ${FONT_SYSTEM.accent};
   font-size: 22px;
   font-weight: 400;
-  color: ${theme.accent};
+  color: ${deco ? theme.accent : bgConfig.textColor};
   margin-bottom: 16px;
 }
 .note-subtitle {
   font-family: ${FONT_SYSTEM.heading};
   font-size: 18px;
   font-weight: 700;
-  color: ${theme.primary};
+  color: ${deco ? theme.primary : bgConfig.textColor};
   margin: 16px 0 8px;
   padding-bottom: 4px;
-  border-bottom: 1px solid rgba(${theme.primaryRgb},0.25);
+  border-bottom: ${deco ? `1px solid rgba(${theme.primaryRgb},0.25)` : 'none'};
 }
 .note-concept {
   margin: 10px 0;
   padding: 12px 16px;
-  border-left: 3px solid rgba(${theme.primaryRgb},0.5);
-  background: rgba(${theme.primaryRgb},0.04);
+  border-left: ${deco ? `3px solid rgba(${theme.primaryRgb},0.5)` : 'none'};
+  background: ${deco ? `rgba(${theme.primaryRgb},0.04)` : 'transparent'};
   border-radius: 0 8px 8px 0;
   line-height: 1.9;
 }
@@ -751,16 +751,16 @@ ${bgConfig.overlayBefore ? `body::before { ${bgConfig.overlayBefore} }` : ''}
   margin: 16px 0;
   padding: 14px 20px;
   border-radius: 10px;
-  background: rgba(${theme.secondaryRgb},0.08);
-  border: 1px solid rgba(${theme.secondaryRgb},0.2);
+  background: ${deco ? `rgba(${theme.secondaryRgb},0.08)` : 'transparent'};
+  border: ${deco ? `1px solid rgba(${theme.secondaryRgb},0.2)` : 'none'};
   font-weight: 500;
 }
 .note-side {
   margin: 14px 0;
   padding: 16px 20px;
   border-radius: 10px;
-  background: rgba(${theme.accentRgb},0.04);
-  border: 1.5px solid rgba(${theme.accentRgb},0.15);
+  background: ${deco ? `rgba(${theme.accentRgb},0.04)` : 'transparent'};
+  border: ${deco ? `1.5px solid rgba(${theme.accentRgb},0.15)` : 'none'};
   font-size: 16px;
   color: ${isDark ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.75)'};
   line-height: 1.9;
