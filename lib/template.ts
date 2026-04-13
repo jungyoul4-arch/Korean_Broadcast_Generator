@@ -23,6 +23,7 @@ import {
 export interface RenderOptions {
   background?: BackgroundPreset;
   showLowerThird?: boolean;
+  showDecorations?: boolean; // 기본 false — 장식 원복 시 !== false 로 변경
 }
 
 // ─── 문제 데이터 ─────────────────────────────────────────
@@ -53,11 +54,13 @@ export function generateProblemHtml(
   const theme = getSubjectTheme(problem.subject);
   const bgConfig = getBackgroundCSS(bg, theme);
   const isDark = bgConfig.isDark;
+  // 장식 토글 — 원복 시 !== false 로 변경
+  const deco = options?.showDecorations === true;
 
   const diff = Math.max(1, Math.min(5, problem.difficulty || 3));
   const stars = '★'.repeat(diff) + '☆'.repeat(5 - diff);
 
-  const sourceBlock = problem.source
+  const sourceBlock = (deco && problem.source)
     ? `<span class="source-tag">${problem.source}</span>`
     : '';
 
@@ -87,11 +90,11 @@ export function generateProblemHtml(
     ? `<div class="choices-area">${problem.choicesHtml}</div>`
     : '';
 
-  const unitTag = problem.unitName
+  const unitTag = (deco && problem.unitName)
     ? `<span class="tag unit-tag">${problem.unitName}</span>`
     : '';
 
-  const subjectTag = `<span class="tag subject-tag">${problem.subject}</span>`;
+  const subjectTag = deco ? `<span class="tag subject-tag">${problem.subject}</span>` : '';
 
   // 하단 자막 바
   const showLT = options?.showLowerThird !== false && bg !== "transparent";
@@ -104,7 +107,7 @@ export function generateProblemHtml(
     : '';
 
   // 포인트 배지 색상 (과목 테마 반영)
-  const pointsBadge = problem.points
+  const pointsBadge = (deco && problem.points)
     ? `<span class="points-badge">${problem.points}점</span>`
     : '';
 
@@ -229,7 +232,7 @@ ${bgConfig.overlayBefore ? `body::before { ${bgConfig.overlayBefore} }` : ''}
 /* ─── 문제 박스 (완전 투명 — 칠판에 직접 박힌 느낌) ─── */
 .problem-box {
   border: none;
-  border-left: 4px solid ${theme.primary};
+  ${deco ? `border-left: 4px solid ${theme.primary};` : ''}
   border-radius: 4px;
   padding: 26px 30px;
   margin-bottom: 16px;
@@ -364,7 +367,7 @@ ${getTextColorOverrides(isDark)}
 <div class="problem-container">
   ${headerBlock}
 
-  <div class="problem-header">
+  ${deco ? `<div class="problem-header">
     <span class="problem-number">${problem.number}</span>
     <div class="meta-row">
       <span class="stars">${stars}</span>
@@ -373,7 +376,7 @@ ${getTextColorOverrides(isDark)}
     ${subjectTag}
     ${unitTag}
     ${sourceBlock}
-  </div>
+  </div>` : ''}
 
   <div class="problem-box">
     <div class="problem-body">
@@ -426,8 +429,10 @@ export function generatePassageHtml(
   const theme = getSubjectTheme(passage.subject);
   const bgConfig = getBackgroundCSS(bg, theme);
   const isDark = bgConfig.isDark;
+  // 장식 토글 — 원복 시 !== false 로 변경
+  const deco = options?.showDecorations === true;
 
-  const sourceBlock = passage.source
+  const sourceBlock = (deco && passage.source)
     ? `<span class="source-tag">${passage.source}</span>`
     : '';
 
@@ -435,8 +440,8 @@ export function generatePassageHtml(
     ? `<div class="header-banner">${passage.headerText}</div>`
     : '';
 
-  const subjectTag = `<span class="tag subject-tag">${passage.subject}</span>`;
-  const unitTag = passage.unitName
+  const subjectTag = deco ? `<span class="tag subject-tag">${passage.subject}</span>` : '';
+  const unitTag = (deco && passage.unitName)
     ? `<span class="tag unit-tag">${passage.unitName}</span>`
     : '';
 
@@ -467,7 +472,7 @@ body {
 ${bgConfig.overlayBefore ? `body::before { ${bgConfig.overlayBefore} }` : ''}
 
 .problem-container {
-  padding: 36px 44px ${showLT ? '56px' : '36px'};
+  padding: ${deco ? `36px 44px ${showLT ? '56px' : '36px'}` : `20px 24px ${showLT ? '56px' : '20px'}`};
   max-width: 760px;
   position: relative;
   z-index: 1;
@@ -534,10 +539,10 @@ ${bgConfig.overlayBefore ? `body::before { ${bgConfig.overlayBefore} }` : ''}
 
 .passage-box {
   border: none;
-  border-left: 2px solid ${isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.3)'};
-  border-right: 2px solid ${isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.3)'};
+  ${deco ? `border-left: 2px solid ${isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.3)'};` : ''}
+  ${deco ? `border-right: 2px solid ${isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.3)'};` : ''}
   border-radius: 0;
-  padding: 26px 30px;
+  padding: ${deco ? '26px 30px' : '16px 0'};
   margin-bottom: 16px;
   background: transparent;
   box-shadow: none;
@@ -576,7 +581,7 @@ ${getTextColorOverrides(isDark)}
 </head>
 <body>
 <div class="problem-container">
-  ${passage.isFirst !== false ? `
+  ${(deco && passage.isFirst !== false) ? `
   ${headerBlock}
   <div class="problem-header">
     <span class="passage-label">지문</span>
@@ -593,7 +598,7 @@ ${getTextColorOverrides(isDark)}
   </div>
 </div>
 
-${passage.isFirst !== false ? lowerThirdBlock : ''}
+${(deco && passage.isFirst !== false) ? lowerThirdBlock : ''}
 </body>
 </html>`;
 }
@@ -615,8 +620,10 @@ export function generateLectureNoteHtml(
   const theme = getSubjectTheme(note.subject);
   const bgConfig = getBackgroundCSS(bg, theme);
   const isDark = bgConfig.isDark;
+  // 장식 토글 — 원복 시 !== false 로 변경
+  const deco = options?.showDecorations === true;
 
-  const sourceBlock = note.source
+  const sourceBlock = (deco && note.source)
     ? `<span class="source-tag">${note.source}</span>`
     : '';
 
@@ -699,7 +706,7 @@ ${bgConfig.overlayBefore ? `body::before { ${bgConfig.overlayBefore} }` : ''}
 
 .note-box {
   border: none;
-  border-left: 4px solid ${theme.primary};
+  ${deco ? `border-left: 4px solid ${theme.primary};` : ''}
   border-radius: 4px;
   padding: 26px 30px;
   background: transparent;
@@ -764,16 +771,26 @@ ${bgConfig.overlayBefore ? `body::before { ${bgConfig.overlayBefore} }` : ''}
 .note-body ul, .note-body ol { padding-left: 24px; margin: 8px 0; }
 .note-body li { margin-bottom: 4px; }
 
+.note-diagram {
+  margin: 16px auto;
+  text-align: center;
+}
+.note-diagram-img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
 ${getTextColorOverrides(isDark)}
 </style>
 </head>
 <body>
 <div class="problem-container">
   ${headerBlock}
-  <div class="note-header">
+  ${deco ? `<div class="note-header">
     <span class="note-label">강의노트</span>
     ${sourceBlock}
-  </div>
+  </div>` : ''}
   <div class="note-box">
     <div class="note-body">
       ${note.noteHtml}

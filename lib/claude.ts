@@ -826,7 +826,7 @@ export async function analyzeLectureNoteImage(
   imageBase64: string,
   mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif",
   source?: string
-): Promise<{ noteHtml: string; noteTitle: string; noteSubject: string }> {
+): Promise<{ noteHtml: string; noteTitle: string; noteSubject: string; hasDiagram: boolean }> {
   const client = getClient();
 
   const NOTE_PROMPT = `당신은 국어 교재/강의노트 이미지를 분석하여 HTML로 변환하는 전문가입니다.
@@ -841,7 +841,8 @@ export async function analyzeLectureNoteImage(
 {
   "noteTitle": "노트 제목/테마명",
   "noteSubject": "독서",
-  "noteHtml": "강의노트 전체 HTML"
+  "noteHtml": "강의노트 전체 HTML",
+  "hasDiagram": false
 }
 \`\`\`
 
@@ -855,6 +856,15 @@ export async function analyzeLectureNoteImage(
 - 일반 문단: <p>내용</p>
 - 밑줄: <u>내용</u>
 - 구분선: <hr class="note-divider">
+
+## ★★★ 그림/도형/차트/그래프 감지 규칙 ★★★
+
+이미지에 **그림, 도형, 차트, 그래프, 표, 삽화, 다이어그램** 등 텍스트가 아닌 시각적 요소가 있으면:
+1. "hasDiagram"을 true로 설정
+2. noteHtml에서 해당 그림이 위치하는 곳에 정확히 다음 플레이스홀더를 삽입:
+   <div class="note-diagram"><!-- DIAGRAM --></div>
+3. 그림 주변의 텍스트(캡션, 라벨, 번호 등)는 플레이스홀더 앞뒤에 정상적으로 추출
+4. 그림이 여러 개면 각 위치에 플레이스홀더를 하나씩 삽입
 
 ## ★★★ 절대 규칙: 모든 텍스트 추출 (빠뜨리면 방송 사고!) ★★★
 
@@ -897,10 +907,23 @@ export async function analyzeLectureNoteImage(
     parsed = JSON.parse(jsonStr);
   }
 
+  let noteHtml = (parsed.noteHtml as string) || "";
+  const hasDiagram = !!(parsed.hasDiagram);
+
+  // 그림이 감지된 경우, 플레이스홀더를 원본 이미지로 교체
+  if (hasDiagram && noteHtml.includes("<!-- DIAGRAM -->")) {
+    const diagramImg = `<img src="data:${mediaType};base64,${imageBase64}" alt="강의노트 그림" class="note-diagram-img" />`;
+    noteHtml = noteHtml.replace(
+      /<div class="note-diagram"><!-- DIAGRAM --><\/div>/g,
+      `<div class="note-diagram">${diagramImg}</div>`
+    );
+  }
+
   return {
-    noteHtml: (parsed.noteHtml as string) || "",
+    noteHtml,
     noteTitle: (parsed.noteTitle as string) || "강의노트",
     noteSubject: (parsed.noteSubject as string) || "국어",
+    hasDiagram,
   };
 }
 

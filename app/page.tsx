@@ -51,6 +51,7 @@ interface NoteState {
   noteHtml: string;
   noteTitle: string;
   noteSubject: string;
+  hasDiagram?: boolean;
   originalThumb?: string;
   html?: string;
   pngBase64?: string;
@@ -493,6 +494,7 @@ export default function Home() {
                         noteHtml: data.noteHtml,
                         noteTitle: data.noteTitle,
                         noteSubject: data.noteSubject,
+                        hasDiagram: data.hasDiagram || false,
                         html: data.html,
                       }
                     : n
