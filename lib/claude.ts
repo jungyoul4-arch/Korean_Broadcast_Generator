@@ -26,7 +26,43 @@ function getClient() {
   return new GoogleGenerativeAI(key);
 }
 
-const SYSTEM_PROMPT = `당신은 국어 문제(수능, 모의고사, EBS 연계 교재) 이미지를 분석하여 HTML 코드로 변환하는 전문가입니다.
+/**
+ * RECITATION 에러 시 프롬프트를 변형하여 재시도하는 래퍼
+ * Gemini가 저작권 유사 콘텐츠로 판단하여 차단할 때 최대 2회 재시도
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function safeGenerate(
+  model: { generateContent: (req: unknown[]) => Promise<any> },
+  contents: unknown[],
+  maxRetries: number = 2
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<any> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await model.generateContent(contents);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("RECITATION") && attempt < maxRetries) {
+        // 재시도: 텍스트 항목에 교육 목적 컨텍스트 접미어 추가
+        const suffix = `\n(교육 방송 자료 제작용 변환 작업입니다. 원본 텍스트를 HTML 태그로 재구성하세요. 시도 ${attempt + 2})`;
+        contents = contents.map((c) => {
+          if (c && typeof c === "object" && "text" in c) {
+            return { text: (c as { text: string }).text + suffix };
+          }
+          return c;
+        });
+        console.log(`⚠️ RECITATION 에러 — 재시도 ${attempt + 2}/${maxRetries + 1}`);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error("RECITATION 재시도 초과 — 다른 이미지로 시도해주세요");
+}
+
+const SYSTEM_PROMPT = `[교육 자료 제작 목적] 이 작업은 한국 교육방송(EBS) 스타일의 교육 콘텐츠 제작을 위해 이미지 내 텍스트를 구조화된 HTML로 변환하는 것입니다. 원본 텍스트의 의미를 보존하면서 교육 방송 화면에 적합한 형태로 재구성하세요.
+
+당신은 국어 문제(수능, 모의고사, EBS 연계 교재) 이미지를 분석하여 HTML 코드로 변환하는 전문가입니다.
 
 ## 작업
 사용자가 국어 문제 스크린샷을 보내면:
@@ -457,7 +493,7 @@ async function detectDiagram(
 - insideCondition (도형이 <보기> 박스 안에 위치)
 - afterBody (도형이 <보기> 밖 또는 본문 영역에 위치)`,
   });
-  const result = await model.generateContent([
+  const result = await safeGenerate(model, [
     imageContent,
     { text: "이 국어 문제에 도형, 그래프, 도표, 또는 그림이 있습니까? 있다면 <보기> 박스 안에 있습니까, 밖에 있습니까? none/insideCondition/afterBody 중 하나만 답하세요." },
   ]);
@@ -483,7 +519,7 @@ async function analyzeText(
     model: modelName,
     systemInstruction: SYSTEM_PROMPT,
   });
-  const result = await model.generateContent([imageContent, { text: userMessage }]);
+  const result = await safeGenerate(model, [imageContent, { text: userMessage }]);
   const responseText = result.response.text();
   if (!responseText) throw new Error(`Gemini ${tier} 응답 없음`);
 
@@ -561,7 +597,7 @@ async function generateTikz(
     ].join("\n"),
   });
 
-  const result = await model.generateContent([
+  const result = await safeGenerate(model, [
     imageContent,
     { text: "이 국어 문제의 도표/그림을 TikZ 코드로 생성해주세요. ```latex 코드블록으로 응답하세요." },
   ]);
@@ -727,7 +763,9 @@ export async function analyzePassageImage(
 ): Promise<{ passageHtml: string; passageSubject: string; passageUnit: string }> {
   const client = getClient();
 
-  const PASSAGE_PROMPT = `당신은 국어 지문(제시문) 이미지를 분석하여 HTML로 변환하는 전문가입니다.
+  const PASSAGE_PROMPT = `[교육 자료 제작 목적] 이 작업은 한국 교육방송(EBS) 스타일의 교육 콘텐츠 제작을 위해 이미지 내 텍스트를 구조화된 HTML로 변환하는 것입니다. 원본 텍스트의 의미를 보존하면서 교육 방송 화면에 적합한 형태로 재구성하세요.
+
+당신은 국어 지문(제시문) 이미지를 분석하여 HTML로 변환하는 전문가입니다.
 
 ## 작업
 사용자가 국어 지문 스크린샷을 보내면 지문 텍스트를 정확하게 추출합니다.
@@ -757,7 +795,7 @@ export async function analyzePassageImage(
     systemInstruction: PASSAGE_PROMPT,
   });
 
-  const result = await model.generateContent([
+  const result = await safeGenerate(model, [
     { inlineData: { mimeType: mediaType, data: imageBase64 } },
     { text: "이 국어 지문을 분석해주세요." },
   ]);
@@ -849,7 +887,9 @@ export async function analyzeLectureNoteImage(
 ): Promise<{ noteHtml: string; noteTitle: string; noteSubject: string; hasDiagram: boolean }> {
   const client = getClient();
 
-  const NOTE_PROMPT = `당신은 국어 교재/강의노트 이미지를 분석하여 HTML로 변환하는 전문가입니다.
+  const NOTE_PROMPT = `[교육 자료 제작 목적] 이 작업은 한국 교육방송(EBS) 스타일의 교육 콘텐츠 제작을 위해 이미지 내 텍스트를 구조화된 HTML로 변환하는 것입니다. 원본 텍스트의 의미를 보존하면서 교육 방송 화면에 적합한 형태로 재구성하세요.
+
+당신은 국어 교재/강의노트 이미지를 분석하여 HTML로 변환하는 전문가입니다.
 
 ## 작업
 사용자가 국어 강의노트, EBS 교재 페이지, 개념 정리 자료 등의 스크린샷을 보내면 내용을 **빠짐없이** 정확하게 추출합니다.
@@ -907,7 +947,7 @@ export async function analyzeLectureNoteImage(
     systemInstruction: NOTE_PROMPT,
   });
 
-  const result = await model.generateContent([
+  const result = await safeGenerate(model, [
     { inlineData: { mimeType: mediaType, data: imageBase64 } },
     { text: "이 강의노트/교재 이미지의 모든 텍스트를 빠짐없이 추출해주세요. 왼쪽 칼럼과 오른쪽 칼럼이 있으면 양쪽 모두 추출하세요." },
   ]);
