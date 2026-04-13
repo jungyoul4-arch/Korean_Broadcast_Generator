@@ -48,6 +48,7 @@ const SYSTEM_PROMPT = `당신은 국어 문제(수능, 모의고사, EBS 연계 
   "unitName": "인문",
   "hasDiagram": false,
   "diagramTikz": null,
+  "diagramPosition": "afterBody",
   "bodyHtml": "HTML 본문 (지문 + 문제 텍스트, 질문 반드시 포함!)",
   "questionHtml": null,
   "conditionHtml": "<보기> 박스 내용 (있는 경우만, 없으면 null)",
@@ -108,6 +109,11 @@ const SYSTEM_PROMPT = `당신은 국어 문제(수능, 모의고사, EBS 연계 
 - 문제에 <보기>가 있으면 conditionHtml에 넣기
 - <보기> 안의 ㄱ, ㄴ, ㄷ 구분은 <br>로 줄바꿈
 - 예: conditionHtml: "<strong>&lt;보기&gt;</strong><br>ㄱ. 첫 번째 내용<br>ㄴ. 두 번째 내용<br>ㄷ. 세 번째 내용"
+
+## 도형/그림 위치 판별 (diagramPosition)
+- 그림/도형/차트가 <보기> 박스 안에 포함되어 있으면: "insideCondition"
+- 그림/도형이 본문 영역에 독립적으로 있거나 <보기> 밖에 있으면: "afterBody" (기본값)
+- 반드시 원본 이미지에서 그림이 <보기> 박스 경계 안에 있는지를 기준으로 판단하세요
 
 ## 밑줄/강조 처리
 - 원본에서 밑줄 친 부분: <u>밑줄 내용</u>
@@ -654,6 +660,7 @@ export async function analyzeProblemImage(
     hasDiagram: !!hasDiagram,
     diagramPngBase64,
     diagramLayout,
+    diagramPosition: p.diagramPosition === "insideCondition" ? "insideCondition" : "afterBody",
     choicesHtml: p.choicesHtml || undefined,
   };
 
@@ -812,6 +819,7 @@ ${passageHtml}
     questionHtml: "",
     conditionHtml: p.conditionHtml || undefined,
     hasDiagram: false,
+    diagramPosition: p.diagramPosition === "insideCondition" ? "insideCondition" : "afterBody",
     choicesHtml: p.choicesHtml || undefined,
   };
 

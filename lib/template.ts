@@ -43,6 +43,7 @@ export interface ProblemData {
   hasDiagram?: boolean;
   diagramPngBase64?: string;
   diagramLayout?: "single" | "wide" | "multi";
+  diagramPosition?: "insideCondition" | "afterBody";
   choicesHtml?: string;
 }
 
@@ -382,8 +383,9 @@ ${getTextColorOverrides(isDark)}
     <div class="problem-body">
       ${problem.bodyHtml}
       ${conditionBlock}
+      ${problem.diagramPosition === 'insideCondition' ? diagramBlock : ''}
     </div>
-    ${diagramBlock}
+    ${problem.diagramPosition !== 'insideCondition' ? diagramBlock : ''}
     ${choicesBlock}
   </div>
 
