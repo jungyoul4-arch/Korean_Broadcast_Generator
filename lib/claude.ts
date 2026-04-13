@@ -2,7 +2,7 @@
  * Gemini API 연동 — 국어/EBS 문제 이미지 분석 + HTML 생성
  * gemini-3.1-pro 사용
  */
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, type GenerativeModel, type Part } from "@google/generative-ai";
 import { generateProblemHtml, type ProblemData, type RenderOptions } from "./template";
 import { renderTikzToPng } from "./tikz-renderer";
 
@@ -30,24 +30,23 @@ function getClient() {
  * RECITATION 에러 시 프롬프트를 변형하여 재시도하는 래퍼
  * Gemini가 저작권 유사 콘텐츠로 판단하여 차단할 때 최대 2회 재시도
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function safeGenerate(
-  model: { generateContent: (req: unknown[]) => Promise<any> },
-  contents: unknown[],
+  model: GenerativeModel,
+  contents: (string | Part)[],
   maxRetries: number = 2
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-): Promise<any> {
+) {
+  let currentContents = [...contents];
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      return await model.generateContent(contents);
+      return await model.generateContent(currentContents);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("RECITATION") && attempt < maxRetries) {
         // 재시도: 텍스트 항목에 교육 목적 컨텍스트 접미어 추가
         const suffix = `\n(교육 방송 자료 제작용 변환 작업입니다. 원본 텍스트를 HTML 태그로 재구성하세요. 시도 ${attempt + 2})`;
-        contents = contents.map((c) => {
-          if (c && typeof c === "object" && "text" in c) {
-            return { text: (c as { text: string }).text + suffix };
+        currentContents = currentContents.map((c) => {
+          if (c && typeof c === "object" && "text" in c && c.text) {
+            return { ...c, text: c.text + suffix };
           }
           return c;
         });
