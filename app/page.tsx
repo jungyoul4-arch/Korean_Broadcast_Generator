@@ -702,22 +702,26 @@ export default function Home() {
 
   const handleDownloadAll = useCallback(async () => {
     const doneProblems = allProblems.filter((p) => p.status === "done" && p.pngBase64);
-    if (doneProblems.length === 0) return;
+    const donePassages = sets.flatMap((s) => s.passages).filter((p) => p.status === "done" && p.pngBase64);
+    const doneNotes = sets.flatMap((s) => s.notes).filter((n) => n.status === "done" && n.pngBase64);
 
-    if (doneProblems.length === 1) {
-      downloadBase64(doneProblems[0].pngBase64!, `prob${doneProblems[0].number}_문제.png`);
+    const allFiles = [
+      ...doneProblems.map((p) => ({ name: `prob${p.number}_문제.png`, base64: p.pngBase64! })),
+      ...donePassages.map((p, i) => ({ name: `passage_${i + 1}_지문.png`, base64: p.pngBase64! })),
+      ...doneNotes.map((n) => ({ name: `note_${n.noteTitle || '강의노트'}.png`, base64: n.pngBase64! })),
+    ];
+
+    if (allFiles.length === 0) return;
+
+    if (allFiles.length === 1) {
+      downloadBase64(allFiles[0].base64, allFiles[0].name);
       return;
     }
 
     const res = await fetch("/api/download", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        files: doneProblems.map((p) => ({
-          name: `prob${p.number}_문제.png`,
-          base64: p.pngBase64,
-        })),
-      }),
+      body: JSON.stringify({ files: allFiles }),
     });
 
     if (!res.ok) return;
@@ -725,10 +729,10 @@ export default function Home() {
     const blob = await res.blob();
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = "korean-problems.zip";
+    link.download = "korean-broadcast.zip";
     link.click();
     URL.revokeObjectURL(link.href);
-  }, [allProblems, downloadBase64]);
+  }, [allProblems, sets, downloadBase64]);
 
   const handleReset = useCallback(() => {
     setSets([]);

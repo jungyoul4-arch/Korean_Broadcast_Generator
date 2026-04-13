@@ -719,9 +719,9 @@ ${bgConfig.overlayBefore ? `body::before { ${bgConfig.overlayBefore} }` : ''}
   font-family: ${FONT_SYSTEM.body};
   font-size: 17px;
   font-weight: 400;
-  line-height: 2.1;
+  line-height: 3.6;
 }
-.note-body p { margin-bottom: 8px; }
+.note-body p { margin-bottom: 24px; }
 
 .note-theme {
   font-family: ${FONT_SYSTEM.accent};
