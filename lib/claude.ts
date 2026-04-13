@@ -446,17 +446,27 @@ function extractConditionFromBody(bodyHtml: string): { bodyHtml: string; conditi
 async function detectDiagram(
   client: InstanceType<typeof GoogleGenerativeAI>,
   imageContent: { inlineData: { mimeType: string; data: string } }
-): Promise<boolean> {
+): Promise<{ hasDiagram: boolean; position: "insideCondition" | "afterBody" }> {
   const model = client.getGenerativeModel({
     model: "gemini-3-flash-preview",
-    systemInstruction: "이미지를 보고 도형, 그래프, 그림, 도표가 있는지만 판단하세요. 반드시 true 또는 false만 응답하세요.\n주의: <보기> 박스의 사각형 테두리, 단순 텍스트 박스, 선지 번호 등은 도형이 아닙니다. 수학적 그래프, 좌표계, 벤 다이어그램, 흐름도, 표(table) 등 실제 도형/도표만 true로 판단하세요.",
+    systemInstruction: `이미지를 보고 도형, 그래프, 그림, 도표가 있는지 판단하고, 있다면 위치도 판단하세요.
+주의: <보기> 박스의 사각형 테두리, 단순 텍스트 박스, 선지 번호 등은 도형이 아닙니다. 수학적 그래프, 좌표계, 벤 다이어그램, 흐름도, 표(table), 삽화 등 실제 도형/도표만 판단하세요.
+
+반드시 다음 중 하나만 응답하세요:
+- none (도형 없음)
+- insideCondition (도형이 <보기> 박스 안에 위치)
+- afterBody (도형이 <보기> 밖 또는 본문 영역에 위치)`,
   });
   const result = await model.generateContent([
     imageContent,
-    { text: "이 국어 문제에 도형, 그래프, 도표, 또는 그림이 있습니까? true/false만 답하세요." },
+    { text: "이 국어 문제에 도형, 그래프, 도표, 또는 그림이 있습니까? 있다면 <보기> 박스 안에 있습니까, 밖에 있습니까? none/insideCondition/afterBody 중 하나만 답하세요." },
   ]);
   const text = result.response.text()?.trim().toLowerCase() || "";
-  return text.includes("true");
+  if (text.includes("none")) {
+    return { hasDiagram: false, position: "afterBody" };
+  }
+  const position = text.includes("insidecondition") ? "insideCondition" as const : "afterBody" as const;
+  return { hasDiagram: true, position };
 }
 
 /**
@@ -587,12 +597,14 @@ export async function analyzeProblemImage(
   // TikZ 생성: detectDiagram으로 도형 유무 먼저 판별 후, 있을 때만 Pro로 생성
   const textTier = usePro ? "pro" : "flash";
 
-  // Step 1: 텍스트 분석 + 도형 유무 판별 병렬 실행
-  const [parsed, hasDiagramDetected] = await Promise.all([
+  // Step 1: 텍스트 분석 + 도형 유무/위치 판별 병렬 실행
+  const [parsed, diagramResult] = await Promise.all([
     analyzeText(client, imageContent, userMessage, textTier),
     detectDiagram(client, imageContent),
   ]);
-  console.log(`${textTier}(텍스트) 완료, 도형 감지: ${hasDiagramDetected}`);
+  const hasDiagramDetected = diagramResult.hasDiagram;
+  const diagramPosition = diagramResult.position;
+  console.log(`${textTier}(텍스트) 완료, 도형 감지: ${hasDiagramDetected}, 위치: ${diagramPosition}`);
 
   // Step 2: 도형이 있을 때만 TikZ 생성
   const tikzCode = hasDiagramDetected
@@ -660,7 +672,7 @@ export async function analyzeProblemImage(
     hasDiagram: !!hasDiagram,
     diagramPngBase64,
     diagramLayout,
-    diagramPosition: p.diagramPosition === "insideCondition" ? "insideCondition" : "afterBody",
+    diagramPosition,
     choicesHtml: p.choicesHtml || undefined,
   };
 
