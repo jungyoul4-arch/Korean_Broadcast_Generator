@@ -28,8 +28,15 @@ import {
  * - 일반 [A] (구분선 없음): 변환 없이 유지
  */
 function styleSectionRanges(html: string): string {
-  // 지원하는 구간 라벨: A~E
-  const labels = ["A", "B", "C", "D", "E"];
+  // 정규식으로 모든 [라벨:start] / [라벨:end] 패턴을 동적 감지
+  const startMatches = [...html.matchAll(/\[([^\]]+):start\]/g)];
+  const endMatches = [...html.matchAll(/\[([^\]]+):end\]/g)];
+  const labels = new Set([
+    ...startMatches.map((m) => m[1]),
+    ...endMatches.map((m) => m[1]),
+  ]);
+
+  if (labels.size === 0) return html;
 
   let result = html;
   for (const label of labels) {
@@ -38,21 +45,16 @@ function styleSectionRanges(html: string): string {
     const hasStart = result.includes(startTag);
     const hasEnd = result.includes(endTag);
 
-    if (!hasStart && !hasEnd) continue;
-
     const openDiv = `<div class="section-range"><span class="section-range-label">[${label}]</span>`;
     const closeDiv = `</div>`;
 
     if (hasStart && hasEnd) {
-      // 양쪽 다 있음: start → open, end → close
       result = result.replace(startTag, openDiv);
       result = result.replace(endTag, closeDiv);
     } else if (hasStart) {
-      // start만 있음: start → open, 본문 끝에 close 추가
       result = result.replace(startTag, openDiv);
       result += closeDiv;
     } else {
-      // end만 있음: 본문 처음에 open 추가, end → close
       result = openDiv + result;
       result = result.replace(endTag, closeDiv);
     }

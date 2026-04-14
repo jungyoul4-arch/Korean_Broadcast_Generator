@@ -164,14 +164,14 @@ const SYSTEM_PROMPT = `[교육 자료 제작 목적] 이 작업은 한국 교육
 - 로마 숫자: Ⅰ, Ⅱ, Ⅲ, Ⅳ, Ⅴ (I, II 등 라틴 문자로 치환 금지)
 - 특수 괄호: 〈〉, 《》, 「」, 『』 (< > 등 일반 괄호로 치환 금지)
 - 화살표/기호: →, ←, ↔, ⇒, ∴, ∵, ※ 등 그대로 유지
-- [A], [B] 등 구간 표시:
+- 구간 표시 ([A], [가], [Ⅰ], (가) 등 모든 형식):
   - 원본 이미지에 세로 구분선이 구간 문자와 함께 있는 경우:
-    - [A:start]는 세로선이 시작되는 위치의 첫 글자 바로 앞에 삽입
-    - [A:end]는 세로선이 끝나는 위치의 마지막 글자 바로 뒤에 삽입
-    - 예: 세로선이 "차설"에서 시작하여 "하여"에서 끝나면 → [A:start]차설...하여[A:end]
-    - B, C, D, E도 동일한 규칙 적용
-  - 구분선의 시작 또는 끝이 이미지에서 보이지 않으면 보이는 쪽만 표기 (예: 끝만 보이면 [A:end]만 삽입)
-  - 구분선 없이 문자만 있는 경우: [A] 그대로 텍스트로 유지
+    - 원본 라벨을 그대로 사용하여 [라벨:start]를 세로선 시작 위치의 첫 글자 바로 앞에 삽입
+    - [라벨:end]를 세로선 끝 위치의 마지막 글자 바로 뒤에 삽입
+    - 예: [가] 라벨에 세로선이 "차설"~"하여" 범위이면 → [가:start]차설...하여[가:end]
+    - 예: [A] 라벨이면 → [A:start]차설...하여[A:end]
+  - 구분선의 시작 또는 끝이 이미지에서 보이지 않으면 보이는 쪽만 표기 (예: 끝만 보이면 [가:end]만 삽입)
+  - 구분선 없이 문자만 있는 경우: 원본 라벨 그대로 텍스트로 유지
 
 ## 빈칸 상자
 - 빈칸이 있는 문제: <span class="answer-box">(가)</span>
@@ -459,10 +459,10 @@ export interface AnalysisResult {
  * Gemini가 conditionHtml 대신 bodyHtml에 보기를 넣는 경우의 후처리
  */
 function extractConditionFromBody(bodyHtml: string): { bodyHtml: string; conditionHtml: string } | null {
-  // <보 기> 또는 &lt;보기&gt; 또는 &lt;보 기&gt; 패턴 감지
-  // 보기 제목부터 선지(①) 직전 또는 question-line 직전까지 추출
+  // 모든 괄호 변형의 <보기> 패턴 감지 (< > ＜ ＞ 〈 〉 「 」 『 』 [ ] 【 】 ( ) + HTML 인코딩)
+  // 보기 제목부터 선지 직전 또는 question-line 직전까지 추출
   const bogiPatterns = [
-    /(&lt;\s*보\s*기\s*&gt;|<보\s*기>|＜\s*보\s*기\s*＞)/,
+    /([<＜〈「『\[【(]\s*보\s*기\s*[>＞〉」』\]】)]|&lt;\s*보\s*기\s*&gt;)/,
   ];
 
   let bogiIdx = -1;
@@ -478,9 +478,9 @@ function extractConditionFromBody(bodyHtml: string): { bodyHtml: string; conditi
 
   if (bogiIdx === -1) return null;
 
-  // 보기 끝 지점: 선지(①②③④⑤) 시작 직전, 또는 bodyHtml 끝
+  // 보기 끝 지점: 선지(①-⑩, ⓐ-ⓝ, ㉠-㉭) 시작 직전, 또는 bodyHtml 끝
   const afterBogi = bodyHtml.slice(bogiIdx);
-  const choiceMatch = afterBogi.match(/[①②③④⑤]\s/);
+  const choiceMatch = afterBogi.match(/[①-⑩ⓐ-ⓝ㉠-㉭]\s/);
   const endIdx = choiceMatch && choiceMatch.index !== undefined
     ? bogiIdx + choiceMatch.index
     : bodyHtml.length;
@@ -521,10 +521,14 @@ async function detectDiagram(
     { text: "이 국어 문제에 도형, 그래프, 도표, 또는 그림이 있습니까? 있다면 <보기> 박스 안에 있습니까, 밖에 있습니까? none/insideCondition/afterBody 중 하나만 답하세요." },
   ]);
   const text = result.response.text()?.trim().toLowerCase() || "";
-  if (text.includes("none")) {
+  const noKeywords = ["none", "no", "없", "없음", "없습니다"];
+  const insideKeywords = ["insidecondition", "inside", "안", "내부", "포함"];
+  if (noKeywords.some((k) => text.includes(k))) {
     return { hasDiagram: false, position: "afterBody" };
   }
-  const position = text.includes("insidecondition") ? "insideCondition" as const : "afterBody" as const;
+  const position = insideKeywords.some((k) => text.includes(k))
+    ? "insideCondition" as const
+    : "afterBody" as const;
   return { hasDiagram: true, position };
 }
 
@@ -810,13 +814,12 @@ export async function analyzePassageImage(
 - 소설/수필: 대화문 따옴표 유지, [중략] 등은 <div class="passage-note">[중략]</div>
 - 밑줄: <u>내용</u> (한 글자짜리도 반드시 감지, 예: ⓛ<u>집</u>). 동그라미 기호 뒤 텍스트에 밑줄이 있는지 반드시 확인
 - 특수 문자 보존: ⓐⓑⓒⓓⓔⓛⓜⓝ, ①②③, ㉠㉡㉢, Ⅰ·Ⅱ·Ⅲ, 〈〉「」『』 등 유니코드 특수 문자를 일반 문자(a, 1, ㄱ, I, <>)로 치환하지 말고 그대로 사용
-- [A], [B] 등 구간 표시:
+- 구간 표시 ([A], [가], [Ⅰ], (가) 등 모든 형식):
   - 원본 이미지에 세로 구분선이 구간 문자와 함께 있는 경우:
-    - [A:start]는 세로선이 시작되는 위치의 첫 글자 바로 앞에 삽입
-    - [A:end]는 세로선이 끝나는 위치의 마지막 글자 바로 뒤에 삽입
-    - 예: 세로선이 "차설"에서 시작하여 "하여"에서 끝나면 → [A:start]차설...하여[A:end]
+    - 원본 라벨을 그대로 사용하여 [라벨:start], [라벨:end] 형태로 삽입
+    - 예: [가:start]차설...하여[가:end], [A:start]차설...하여[A:end]
   - 구분선의 시작 또는 끝이 이미지에서 보이지 않으면 보이는 쪽만 표기
-  - 구분선 없이 문자만 있는 경우: [A] 그대로 텍스트로 유지
+  - 구분선 없이 문자만 있는 경우: 원본 라벨 그대로 텍스트로 유지
 - 한자 병기 유지
 - 각주/미주 포함
 
