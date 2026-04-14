@@ -347,6 +347,29 @@ ${bgConfig.overlayBefore ? `body::before { ${bgConfig.overlayBefore} }` : ''}
   border-left: 3px solid ${isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)'};
 }
 
+/* ─── [A]~[E] 구간 구분선 ─── */
+.section-marker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0;
+  text-indent: 0;
+}
+.section-marker::before,
+.section-marker::after {
+  content: '';
+  flex: 1;
+  border-top: 1.5px dashed ${isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)'};
+}
+.section-marker-label {
+  font-family: ${FONT_SYSTEM.heading};
+  font-size: 15px;
+  font-weight: 700;
+  color: ${isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.55)'};
+  white-space: nowrap;
+  letter-spacing: 0.5px;
+}
+
 /* ─── KaTeX ─── */
 ${isDark ? `
 .katex, .katex * { color: #fff !important; }
@@ -576,6 +599,29 @@ ${bgConfig.overlayBefore ? `body::before { ${bgConfig.overlayBefore} }` : ''}
   color: ${isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.45)'};
   font-style: italic;
   border-left: 3px solid ${isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)'};
+}
+
+/* ─── [A]~[E] 구간 구분선 ─── */
+.section-marker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0;
+  text-indent: 0;
+}
+.section-marker::before,
+.section-marker::after {
+  content: '';
+  flex: 1;
+  border-top: 1.5px dashed ${isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)'};
+}
+.section-marker-label {
+  font-family: ${FONT_SYSTEM.heading};
+  font-size: 15px;
+  font-weight: 700;
+  color: ${isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.55)'};
+  white-space: nowrap;
+  letter-spacing: 0.5px;
 }
 
 ${getTextColorOverrides(isDark)}
