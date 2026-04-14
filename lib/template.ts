@@ -19,6 +19,48 @@ import {
   DEFAULT_THEME,
 } from "./theme";
 
+// ─── [A:start]/[A:end] 구간 마커 → 세로 구분선 변환 ─────
+/**
+ * 렌더링 시점에서 [A:start]~[A:end] 마커를 세로 구분선 HTML로 변환
+ * - 양쪽 다 있음: start~end 범위를 div.section-range로 감싸기
+ * - start만 있음: start~본문 끝까지 감싸기
+ * - end만 있음: 본문 처음~end까지 감싸기
+ * - 일반 [A] (구분선 없음): 변환 없이 유지
+ */
+function styleSectionRanges(html: string): string {
+  // 지원하는 구간 라벨: A~E
+  const labels = ["A", "B", "C", "D", "E"];
+
+  let result = html;
+  for (const label of labels) {
+    const startTag = `[${label}:start]`;
+    const endTag = `[${label}:end]`;
+    const hasStart = result.includes(startTag);
+    const hasEnd = result.includes(endTag);
+
+    if (!hasStart && !hasEnd) continue;
+
+    const openDiv = `<div class="section-range"><span class="section-range-label">[${label}]</span>`;
+    const closeDiv = `</div>`;
+
+    if (hasStart && hasEnd) {
+      // 양쪽 다 있음: start → open, end → close
+      result = result.replace(startTag, openDiv);
+      result = result.replace(endTag, closeDiv);
+    } else if (hasStart) {
+      // start만 있음: start → open, 본문 끝에 close 추가
+      result = result.replace(startTag, openDiv);
+      result += closeDiv;
+    } else {
+      // end만 있음: 본문 처음에 open 추가, end → close
+      result = openDiv + result;
+      result = result.replace(endTag, closeDiv);
+    }
+  }
+
+  return result;
+}
+
 // ─── 렌더 옵션 (프론트에서 전달) ─────────────────────────
 export interface RenderOptions {
   background?: BackgroundPreset;
@@ -347,27 +389,22 @@ ${bgConfig.overlayBefore ? `body::before { ${bgConfig.overlayBefore} }` : ''}
   border-left: 3px solid ${isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)'};
 }
 
-/* ─── [A]~[E] 구간 구분선 ─── */
-.section-marker {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 14px 0;
-  text-indent: 0;
+/* ─── [A]~[E] 구간 세로 구분선 ─── */
+.section-range {
+  position: relative;
+  border-left: 2px solid ${isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.3)'};
+  padding-left: 20px;
+  margin: 4px 0;
 }
-.section-marker::before,
-.section-marker::after {
-  content: '';
-  flex: 1;
-  border-top: 1.5px dashed ${isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)'};
-}
-.section-marker-label {
+.section-range-label {
+  position: absolute;
+  left: -32px;
+  top: 0;
   font-family: ${FONT_SYSTEM.heading};
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
-  color: ${isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.55)'};
+  color: ${isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.45)'};
   white-space: nowrap;
-  letter-spacing: 0.5px;
 }
 
 /* ─── KaTeX ─── */
@@ -404,7 +441,7 @@ ${getTextColorOverrides(isDark)}
 
   <div class="problem-box">
     <div class="problem-body">
-      ${problem.bodyHtml}
+      ${styleSectionRanges(problem.bodyHtml)}
       ${conditionBlock}
       ${problem.diagramPosition === 'insideCondition' ? diagramBlock : ''}
     </div>
@@ -601,27 +638,22 @@ ${bgConfig.overlayBefore ? `body::before { ${bgConfig.overlayBefore} }` : ''}
   border-left: 3px solid ${isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)'};
 }
 
-/* ─── [A]~[E] 구간 구분선 ─── */
-.section-marker {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 14px 0;
-  text-indent: 0;
+/* ─── [A]~[E] 구간 세로 구분선 ─── */
+.section-range {
+  position: relative;
+  border-left: 2px solid ${isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.3)'};
+  padding-left: 20px;
+  margin: 4px 0;
 }
-.section-marker::before,
-.section-marker::after {
-  content: '';
-  flex: 1;
-  border-top: 1.5px dashed ${isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)'};
-}
-.section-marker-label {
+.section-range-label {
+  position: absolute;
+  left: -32px;
+  top: 0;
   font-family: ${FONT_SYSTEM.heading};
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
-  color: ${isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.55)'};
+  color: ${isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.45)'};
   white-space: nowrap;
-  letter-spacing: 0.5px;
 }
 
 ${getTextColorOverrides(isDark)}
@@ -641,7 +673,7 @@ ${getTextColorOverrides(isDark)}
 
   <div class="passage-box">
     <div class="passage-body">
-      ${passage.passageHtml}
+      ${styleSectionRanges(passage.passageHtml)}
     </div>
   </div>
 </div>
