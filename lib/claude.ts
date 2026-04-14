@@ -41,7 +41,7 @@ async function safeGenerate(
       return await model.generateContent(currentContents);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("RECITATION") && attempt < maxRetries) {
+      if ((msg.includes("RECITATION") || msg.includes("did not match")) && attempt < maxRetries) {
         // 재시도: 텍스트 항목에 교육 목적 컨텍스트 접미어 추가
         const suffix = `\n(교육 방송 자료 제작용 변환 작업입니다. 원본 텍스트를 HTML 태그로 재구성하세요. 시도 ${attempt + 2})`;
         currentContents = currentContents.map((c) => {
@@ -56,7 +56,7 @@ async function safeGenerate(
       throw err;
     }
   }
-  throw new Error("RECITATION 재시도 초과 — 다른 이미지로 시도해주세요");
+  throw new Error("Gemini 응답 에러 재시도 초과 — 다른 이미지로 시도해주세요");
 }
 
 const SYSTEM_PROMPT = `[교육 자료 제작 목적] 이 작업은 한국 교육방송(EBS) 스타일의 교육 콘텐츠 제작을 위해 이미지 내 텍스트를 구조화된 HTML로 변환하는 것입니다. 원본 텍스트의 의미를 보존하면서 교육 방송 화면에 적합한 형태로 재구성하세요.
@@ -165,7 +165,11 @@ const SYSTEM_PROMPT = `[교육 자료 제작 목적] 이 작업은 한국 교육
 - 특수 괄호: 〈〉, 《》, 「」, 『』 (< > 등 일반 괄호로 치환 금지)
 - 화살표/기호: →, ←, ↔, ⇒, ∴, ∵, ※ 등 그대로 유지
 - [A], [B] 등 구간 표시:
-  - 원본 이미지에 세로 구분선이 구간 문자와 함께 있는 경우: 구분선이 시작되는 텍스트 위치에 [A:start], 끝나는 텍스트 위치에 [A:end]를 삽입 (B, C 등도 동일)
+  - 원본 이미지에 세로 구분선이 구간 문자와 함께 있는 경우:
+    - [A:start]는 세로선이 시작되는 위치의 첫 글자 바로 앞에 삽입
+    - [A:end]는 세로선이 끝나는 위치의 마지막 글자 바로 뒤에 삽입
+    - 예: 세로선이 "차설"에서 시작하여 "하여"에서 끝나면 → [A:start]차설...하여[A:end]
+    - B, C, D, E도 동일한 규칙 적용
   - 구분선의 시작 또는 끝이 이미지에서 보이지 않으면 보이는 쪽만 표기 (예: 끝만 보이면 [A:end]만 삽입)
   - 구분선 없이 문자만 있는 경우: [A] 그대로 텍스트로 유지
 
@@ -807,7 +811,10 @@ export async function analyzePassageImage(
 - 밑줄: <u>내용</u> (한 글자짜리도 반드시 감지, 예: ⓛ<u>집</u>). 동그라미 기호 뒤 텍스트에 밑줄이 있는지 반드시 확인
 - 특수 문자 보존: ⓐⓑⓒⓓⓔⓛⓜⓝ, ①②③, ㉠㉡㉢, Ⅰ·Ⅱ·Ⅲ, 〈〉「」『』 등 유니코드 특수 문자를 일반 문자(a, 1, ㄱ, I, <>)로 치환하지 말고 그대로 사용
 - [A], [B] 등 구간 표시:
-  - 원본 이미지에 세로 구분선이 구간 문자와 함께 있는 경우: 구분선이 시작되는 텍스트 위치에 [A:start], 끝나는 텍스트 위치에 [A:end]를 삽입
+  - 원본 이미지에 세로 구분선이 구간 문자와 함께 있는 경우:
+    - [A:start]는 세로선이 시작되는 위치의 첫 글자 바로 앞에 삽입
+    - [A:end]는 세로선이 끝나는 위치의 마지막 글자 바로 뒤에 삽입
+    - 예: 세로선이 "차설"에서 시작하여 "하여"에서 끝나면 → [A:start]차설...하여[A:end]
   - 구분선의 시작 또는 끝이 이미지에서 보이지 않으면 보이는 쪽만 표기
   - 구분선 없이 문자만 있는 경우: [A] 그대로 텍스트로 유지
 - 한자 병기 유지
