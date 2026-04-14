@@ -60,6 +60,25 @@ function styleSectionRanges(html: string): string {
     }
   }
 
+  // 후처리: <p> 안에 <div class="section-range">가 열리는 경우 → <p>를 먼저 닫기
+  result = result.replace(
+    /<p([^>]*)>([^<]*)<div class="section-range">/g,
+    (_match, attrs: string, before: string) => {
+      const trimmed = before.trim();
+      return (trimmed ? `<p${attrs}>${trimmed}</p>` : "") +
+        `<div class="section-range">`;
+    },
+  );
+
+  // 후처리: </div>가 <p> 안에서 닫히는 경우 → </div> 후 <p> 다시 열기
+  result = result.replace(
+    /<\/div>([^<]*)<\/p>/g,
+    (_match, after: string) => {
+      const trimmed = after.trim();
+      return `</div>` + (trimmed ? `<p>${trimmed}</p>` : "");
+    },
+  );
+
   return result;
 }
 
@@ -863,6 +882,24 @@ ${bgConfig.overlayBefore ? `body::before { ${bgConfig.overlayBefore} }` : ''}
   border-radius: 6px;
 }
 
+/* ─── [A]~[E] 구간 세로 구분선 ─── */
+.section-range {
+  position: relative;
+  border-left: 2px solid ${isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.3)'};
+  padding-left: 20px;
+  margin: 4px 0;
+}
+.section-range-label {
+  position: absolute;
+  left: -32px;
+  top: 0;
+  font-family: ${FONT_SYSTEM.heading};
+  font-size: 14px;
+  font-weight: 700;
+  color: ${isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.45)'};
+  white-space: nowrap;
+}
+
 ${getTextColorOverrides(isDark)}
 </style>
 </head>
@@ -875,7 +912,7 @@ ${getTextColorOverrides(isDark)}
   </div>` : ''}
   <div class="note-box">
     <div class="note-body">
-      ${note.noteHtml}
+      ${styleSectionRanges(note.noteHtml)}
     </div>
   </div>
 </div>
