@@ -155,11 +155,39 @@ const SYSTEM_PROMPT = `[교육 자료 제작 목적] 이 작업은 한국 교육
 - 한 글자짜리 밑줄도 반드시 감지하세요 (예: ⓛ<u>집</u>)
 - ★ 동그라미 기호 바로 뒤의 텍스트에는 밑줄이 함께 있는 경우가 많습니다. 반드시 원본을 확인하고 밑줄이 있으면 <u> 태그로 감싸세요
 
-## 특수 문자/유니코드 보존 (★★★ 중요 ★★★)
-원본 이미지의 특수 문자를 일반 문자로 치환하지 마세요. 반드시 해당하는 유니코드 문자를 그대로 사용하세요.
-- 동그라미 소문자: ⓐⓑⓒⓓⓔⓕⓖⓗⓘⓙⓚⓛⓜⓝ (a~n으로 치환 금지)
-- 동그라미 숫자: ①②③④⑤⑥⑦⑧⑨⑩ (1~10으로 치환 금지)
-- 동그라미 한글 자음: ㉠㉡㉢㉣㉤㉥㉦㉧㉨㉩㉪㉫㉬㉭ (ㄱ~ㅎ으로 치환 금지)
+## 특수 문자/유니코드 보존 (★★★ 최우선 규칙 ★★★)
+
+원본 이미지의 특수 문자는 **반드시 시각적으로 본 그대로의 유니코드 코드포인트**로 출력하세요. 시각적 형태가 비슷하다는 이유로 다른 계열 문자를 쓰지 마세요.
+
+### 동그라미 안 글자 → 계열 판별 → 코드포인트 결정 (3단계)
+
+응답 작성 전 모든 동그라미 마커에 대해 다음 3단계를 거치세요.
+
+**1단계**: 동그라미 안의 글자가 무엇인지 식별
+- 한글 자음 (ㄱ ㄴ ㄷ ㄹ ㅁ ㅂ ㅅ ㅇ ㅈ ㅊ ㅋ ㅌ ㅍ ㅎ) 인가?
+- 라틴 소문자 (a b c d e f g h i j k l m n) 인가?
+- 아라비아 숫자 (1 2 3 4 5 6 7 8 9 10) 인가?
+
+**2단계**: 식별된 글자에 따라 정확한 코드포인트 사용
+- 한글 자음이 들어 있으면 (ㄱ→㉠, ㄴ→㉡, ㄷ→㉢, ㄹ→㉣, ㅁ→㉤, ㅂ→㉥, ㅅ→㉦, ㅇ→㉧, ㅈ→㉨, ㅊ→㉩, ㅋ→㉪, ㅌ→㉫, ㅍ→㉬, ㅎ→㉭) → 반드시 ㉠㉡㉢㉣㉤㉥㉦㉧㉨㉩㉪㉫㉬㉭ (U+3260~U+326D)
+- 라틴 소문자가 들어 있으면 (a→ⓐ, b→ⓑ, ...) → 반드시 ⓐⓑⓒⓓⓔⓕⓖⓗⓘⓙⓚⓛⓜⓝ (U+24D0~U+24DD)
+- 숫자가 들어 있으면 (1→①, 2→②, ...) → 반드시 ①②③④⑤⑥⑦⑧⑨⑩ (U+2460~U+2469)
+
+**3단계**: 절대 금지 사항
+- 동그라미 안 글자가 한글 자음(예: ㄹ)인데 ⓓ(라틴 d) 또는 ④(숫자 4)로 출력 → **금지**
+- 동그라미 안 글자가 라틴 소문자(예: a)인데 ㉠(한글 ㄱ) 또는 ①(숫자 1)로 출력 → **금지**
+- 동그라미 안 글자가 숫자(예: 1)인데 ⓛ(라틴 l) 또는 ㉠으로 출력 → **금지**
+- 동그라미 마커를 일반 문자(@, *, 단순 a/b/c, 단순 1/2/3)로 치환 → **금지** (반드시 위 표의 동그라미 유니코드 사용)
+
+### 자주 발생하는 혼동 사례 (★ 정독)
+
+- **㉣ vs ⓓ vs ④**: 셋 다 시각적으로 동그라미 + 한 글자지만 안의 글자가 다름. 한글 ㄹ이면 반드시 ㉣
+- **㉤ vs ⓔ vs ⑩**: 한글 ㅁ이면 반드시 ㉤. ⑩은 숫자 10용
+- **㉠ vs ⓐ vs ①**: 한글 ㄱ이면 반드시 ㉠
+- **고전시가/고전소설 본문에 등장하는 동그라미 마커는 거의 항상 한글 자음(㉠-㉭) 계열**임을 기본 가정으로 두세요
+
+### 기타 특수 문자 (기존 규칙 유지)
+
 - 괄호 한글: ㈀㈁㈂㈃㈄ 또는 (가)(나)(다)(라)(마) 형태 유지
 - 로마 숫자: Ⅰ, Ⅱ, Ⅲ, Ⅳ, Ⅴ (I, II 등 라틴 문자로 치환 금지)
 - 특수 괄호: 〈〉, 《》, 「」, 『』 (< > 등 일반 괄호로 치환 금지)
@@ -172,6 +200,15 @@ const SYSTEM_PROMPT = `[교육 자료 제작 목적] 이 작업은 한국 교육
     - 예: [A] 라벨이면 → [A:start]차설...하여[A:end]
   - 구분선의 시작 또는 끝이 이미지에서 보이지 않으면 보이는 쪽만 표기 (예: 끝만 보이면 [가:end]만 삽입)
   - 구분선 없이 문자만 있는 경우: 원본 라벨 그대로 텍스트로 유지
+
+### 응답 직전 자체 검토 (필수)
+
+JSON을 출력하기 직전, bodyHtml/conditionHtml/choicesHtml에 포함된 **모든 동그라미 마커**에 대해:
+1. 원본 이미지의 해당 위치를 다시 확인
+2. 동그라미 안 글자(한글 자음 / 라틴 소문자 / 숫자) 계열을 재확인
+3. 출력한 유니코드가 위 표의 정확한 계열인지 검증
+
+이 검토를 거치지 않은 응답은 무효합니다.
 
 ## 빈칸 상자
 - 빈칸이 있는 문제: <span class="answer-box">(가)</span>
@@ -455,65 +492,6 @@ export interface AnalysisResult {
 }
 
 /**
- * 원문자(circled marker) 검증·교정 유틸
- * Gemini가 시각적으로 유사한 원문자 계열을 가끔 혼동하는 문제 대응
- */
-const MARKER_RE = /[①-⑩ⓐ-ⓝ㉠-㉭]/gu;
-
-function markerCategory(c: string): "num" | "lat" | "kor" | "?" {
-  if (/[①-⑩]/u.test(c)) return "num";
-  if (/[ⓐ-ⓝ]/u.test(c)) return "lat";
-  if (/[㉠-㉭]/u.test(c)) return "kor";
-  return "?";
-}
-
-function majorityCategory(arr: string[]): string {
-  const tally: Record<string, number> = {};
-  for (const c of arr) {
-    const k = markerCategory(c);
-    tally[k] = (tally[k] ?? 0) + 1;
-  }
-  return Object.entries(tally).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "?";
-}
-
-/**
- * 메인 분석 결과의 마커를 이미지 검증 결과로 위치별 덮어쓰기
- * - 길이가 같을 때만 교체 (안전)
- * - 본문/verify 다수결 계열이 다르면 skip (정당한 ⓐⓑⓒ 역회귀 회피)
- * - 변경 개수가 절반 초과면 skip (시각-문서 순서 불일치 의심)
- */
-function reconcileMarkers(html: string, verified: string[] | null): string {
-  if (!verified || !html) return html;
-  const found = html.match(MARKER_RE) ?? [];
-  if (found.length === 0) return html;
-  if (found.length !== verified.length) {
-    console.warn(`⚠️ [marker] 길이 불일치 — main=${found.length}, verify=${verified.length}, skip`);
-    return html;
-  }
-  const bodyCat = majorityCategory(found);
-  const verCat = majorityCategory(verified);
-  if (bodyCat !== "?" && verCat !== "?" && bodyCat !== verCat) {
-    console.warn(`⚠️ [marker] 계열 mismatch — body=${bodyCat}, verify=${verCat}, skip`);
-    return html;
-  }
-  let i = 0;
-  let changed = 0;
-  const fixed = html.replace(MARKER_RE, (m) => {
-    const v = verified[i++];
-    if (v && v !== m) { changed++; return v; }
-    return m;
-  });
-  if (changed > Math.floor(found.length / 2)) {
-    console.warn(`⚠️ [marker] 변경 과다(${changed}/${found.length}) — 순서 불일치 의심, skip`);
-    return html;
-  }
-  if (changed > 0) {
-    console.warn(`✏️ [marker] ${changed}개 교정: ${found.join("")} → ${verified.join("")}`);
-  }
-  return fixed;
-}
-
-/**
  * bodyHtml에서 <보기> 블록을 감지하여 conditionHtml로 추출
  * Gemini가 conditionHtml 대신 bodyHtml에 보기를 넣는 경우의 후처리
  */
@@ -589,48 +567,6 @@ async function detectDiagram(
     ? "insideCondition" as const
     : "afterBody" as const;
   return { hasDiagram: true, position };
-}
-
-/**
- * 이미지에서 원문자(circled marker) 시퀀스를 강건하게 추출 — 메인 분석 결과 검증/교정용
- * 실패 시 null 반환 (메인 분석에 영향 없음)
- *
- * safeGenerate를 우회하는 이유: RECITATION 재시도 suffix("교육 방송 자료 제작용 변환")가
- * 마커 추출 태스크와 문맥 불일치. 자체 try/catch로 격리.
- */
-async function verifyMarkersFromImage(
-  client: InstanceType<typeof GoogleGenerativeAI>,
-  imageContent: { inlineData: { mimeType: string; data: string } }
-): Promise<string[] | null> {
-  try {
-    const model = client.getGenerativeModel({
-      model: "gemini-3-flash-preview",
-      systemInstruction: `이미지에 있는 원문자(circled marker)만 위에서 아래·왼쪽에서 오른쪽 순서로 정확한 유니코드로 추출합니다.
-
-판별 기준 (★ 동그라미 안 글자로 계열 결정):
-- 동그라미 안이 한글 자음(ㄱ,ㄴ,ㄷ,ㄹ,ㅁ,ㅂ,ㅅ,ㅇ,ㅈ,ㅊ,ㅋ,ㅌ,ㅍ,ㅎ) → 반드시 ㉠ ㉡ ㉢ ㉣ ㉤ ㉥ ㉦ ㉧ ㉨ ㉩ ㉪ ㉫ ㉬ ㉭ (U+3260대)
-- 동그라미 안이 라틴 소문자(a,b,c,...) → 반드시 ⓐ ⓑ ⓒ ⓓ ⓔ ⓕ ⓖ ⓗ ⓘ ⓙ ⓚ ⓛ ⓜ ⓝ (U+24D0대)
-- 동그라미 안이 숫자(1,2,3,...) → 반드시 ① ② ③ ④ ⑤ ⑥ ⑦ ⑧ ⑨ ⑩ (U+2460대)
-- 시각적으로 유사하다는 이유로 다른 계열을 사용하지 마세요
-
-응답 형식: JSON 배열만. 다른 텍스트 금지. 원문 텍스트는 절대 반환하지 마세요.
-예: ["㉠","㉡","㉣","㉤","①","②","③","④","⑤"]
-원문자가 없으면 []`,
-    });
-
-    const result = await model.generateContent([
-      imageContent,
-      { text: "이 이미지의 모든 원문자 마커를 위→아래·좌→우 순서로 JSON 배열로만 응답하세요." },
-    ]);
-    const text = result.response.text()?.trim() ?? "";
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) return null;
-    const arr = JSON.parse(jsonMatch[0]);
-    if (!Array.isArray(arr) || !arr.every((s) => typeof s === "string")) return null;
-    return arr.filter((s) => /^[①-⑩ⓐ-ⓝ㉠-㉭]$/u.test(s));
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -761,15 +697,14 @@ export async function analyzeProblemImage(
   // TikZ 생성: detectDiagram으로 도형 유무 먼저 판별 후, 있을 때만 Pro로 생성
   const textTier = usePro ? "pro" : "flash";
 
-  // Step 1: 텍스트 분석 + 도형 유무/위치 판별 + 마커 검증 병렬 실행
-  const [parsed, diagramResult, verifiedMarkers] = await Promise.all([
+  // Step 1: 텍스트 분석 + 도형 유무/위치 판별 병렬 실행
+  const [parsed, diagramResult] = await Promise.all([
     analyzeText(client, imageContent, userMessage, textTier),
     detectDiagram(client, imageContent),
-    verifyMarkersFromImage(client, imageContent),
   ]);
   const hasDiagramDetected = diagramResult.hasDiagram;
   const diagramPosition = diagramResult.position;
-  console.log(`${textTier}(텍스트) 완료, 도형 감지: ${hasDiagramDetected}, 위치: ${diagramPosition}, 마커 검증: ${verifiedMarkers ? `[${verifiedMarkers.join("")}]` : "skip"}`);
+  console.log(`${textTier}(텍스트) 완료, 도형 감지: ${hasDiagramDetected}, 위치: ${diagramPosition}`);
 
   // Step 2: 도형이 있을 때만 TikZ 생성
   const tikzCode = hasDiagramDetected
@@ -808,25 +743,9 @@ export async function analyzeProblemImage(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const p = parsed as any;
 
-  // 후처리 1: 마커 교정 — 이미지 검증 결과를 ground truth로 사용
-  //   bodyHtml + conditionHtml + choicesHtml 을 SOH(U+0001)로 결합한 단일 시퀀스에서
-  //   verifiedMarkers(이미지 좌→우·위→아래 순서)와 위치별 정렬·교체
-  //   원본의 undefined 의미는 hadCond/hadCh로 보존(빈 문자열 ≠ undefined)
+  // 후처리: bodyHtml에 <보기> 내용이 포함된 경우 conditionHtml로 추출
   let bodyHtml: string = p.bodyHtml || "";
   let conditionHtml: string | undefined = p.conditionHtml || undefined;
-  const rawChoicesHtml: string | undefined = p.choicesHtml || undefined;
-
-  const SOH = "";
-  const hadCond = conditionHtml !== undefined;
-  const hadCh = rawChoicesHtml !== undefined;
-  const combined = [bodyHtml, conditionHtml ?? "", rawChoicesHtml ?? ""].join(SOH);
-  const reconciled = reconcileMarkers(combined, verifiedMarkers);
-  const parts = reconciled.split(SOH);
-  bodyHtml = parts[0] ?? bodyHtml;
-  conditionHtml = hadCond ? parts[1] : undefined;
-  const choicesHtmlFixed = hadCh ? parts[2] : undefined;
-
-  // 후처리 2: bodyHtml에 <보기> 내용이 포함된 경우 conditionHtml로 추출
   if (!conditionHtml && bodyHtml) {
     const extracted = extractConditionFromBody(bodyHtml);
     if (extracted) {
@@ -853,7 +772,7 @@ export async function analyzeProblemImage(
     diagramPngBase64,
     diagramLayout,
     diagramPosition,
-    choicesHtml: choicesHtmlFixed,
+    choicesHtml: p.choicesHtml || undefined,
   };
 
   const html = generateProblemHtml(problemData, renderOptions);
@@ -930,7 +849,14 @@ export async function analyzePassageImage(
 - 시(詩): 행마다 <br>, 연 구분은 <br><br>, 제목/작가는 <div class="poem-title">제목 — 작가</div>
 - 소설/수필: 대화문 따옴표 유지, [중략] 등은 <div class="passage-note">[중략]</div>
 - 밑줄: <u>내용</u> (한 글자짜리도 반드시 감지, 예: ⓛ<u>집</u>). 동그라미 기호 뒤 텍스트에 밑줄이 있는지 반드시 확인
-- 특수 문자 보존: ⓐⓑⓒⓓⓔⓛⓜⓝ, ①②③, ㉠㉡㉢, Ⅰ·Ⅱ·Ⅲ, 〈〉「」『』 등 유니코드 특수 문자를 일반 문자(a, 1, ㄱ, I, <>)로 치환하지 말고 그대로 사용
+- 특수 문자 보존 (★★★ 최우선 ★★★): 동그라미 마커는 안 글자에 따라 정확한 계열의 유니코드를 사용하세요.
+  - 동그라미 안 한글 자음(ㄱ~ㅎ) → ㉠㉡㉢㉣㉤㉥㉦㉧㉨㉩㉪㉫㉬㉭ (U+3260~U+326D)만 사용. ⓐⓑⓒⓓⓔ나 ①②③④⑤로 절대 출력 금지.
+  - 동그라미 안 라틴 소문자(a~n) → ⓐⓑⓒⓓⓔⓕⓖⓗⓘⓙⓚⓛⓜⓝ (U+24D0~U+24DD)만 사용. ㉠㉡㉢이나 ①②③으로 절대 출력 금지.
+  - 동그라미 안 숫자(1~10) → ①②③④⑤⑥⑦⑧⑨⑩ (U+2460~U+2469)만 사용.
+  - 혼동 사례: ㉣ vs ⓓ vs ④, ㉤ vs ⓔ vs ⑩, ㉠ vs ⓐ vs ①.
+  - 동그라미 마커를 일반 문자(@, *, a/b/c, 1/2/3)로 치환 금지.
+  - 응답 직전, 모든 동그라미 마커에 대해 안 글자 계열을 다시 확인하세요.
+  - 기타: Ⅰ·Ⅱ·Ⅲ(I, II로 치환 금지), 〈〉「」『』(< > 일반 괄호로 치환 금지), 화살표/기호(→ ← ∴ ∵ ※)는 그대로 유지.
 - 구간 표시 ([A], [가], [Ⅰ], (가) 등 모든 형식):
   - 원본 이미지에 세로 구분선이 구간 문자와 함께 있는 경우:
     - 원본 라벨을 그대로 사용하여 [라벨:start], [라벨:end] 형태로 삽입
@@ -1073,15 +999,44 @@ export async function analyzeLectureNoteImage(
 - 밑줄: <u>내용</u> (한 글자짜리도 반드시 감지, 예: ⓛ<u>집</u>). 동그라미 기호 뒤 텍스트에 밑줄이 있는지 반드시 확인
 - 구분선: <hr class="note-divider">
 
-## 특수 문자/유니코드 보존 (★★★ 중요 ★★★)
-원본 이미지의 특수 문자를 일반 문자로 치환하지 마세요. 반드시 해당하는 유니코드 문자를 그대로 사용하세요.
-- 동그라미 소문자: ⓐⓑⓒⓓⓔⓕⓖⓗⓘⓙⓚⓛⓜⓝ (a~n으로 치환 금지)
-- 동그라미 숫자: ①②③④⑤⑥⑦⑧⑨⑩ (1~10으로 치환 금지)
-- 동그라미 한글 자음: ㉠㉡㉢㉣㉤㉥㉦㉧㉨㉩㉪㉫㉬㉭ (ㄱ~ㅎ으로 치환 금지)
+## 특수 문자/유니코드 보존 (★★★ 최우선 규칙 ★★★)
+
+원본 이미지의 특수 문자는 **반드시 시각적으로 본 그대로의 유니코드 코드포인트**로 출력하세요. 시각적 형태가 비슷하다는 이유로 다른 계열 문자를 쓰지 마세요.
+
+### 동그라미 안 글자 → 계열 판별 → 코드포인트 결정 (3단계)
+
+응답 작성 전 모든 동그라미 마커에 대해 다음 3단계를 거치세요.
+
+**1단계**: 동그라미 안의 글자가 무엇인지 식별 (한글 자음 / 라틴 소문자 / 아라비아 숫자)
+
+**2단계**: 식별된 글자에 따라 정확한 코드포인트 사용
+- 한글 자음(ㄱ→㉠, ㄴ→㉡, ㄷ→㉢, ㄹ→㉣, ㅁ→㉤, ㅂ→㉥, ㅅ→㉦, ㅇ→㉧, ㅈ→㉨, ㅊ→㉩, ㅋ→㉪, ㅌ→㉫, ㅍ→㉬, ㅎ→㉭) → 반드시 ㉠㉡㉢㉣㉤㉥㉦㉧㉨㉩㉪㉫㉬㉭ (U+3260~U+326D)
+- 라틴 소문자(a→ⓐ, b→ⓑ, ...) → 반드시 ⓐⓑⓒⓓⓔⓕⓖⓗⓘⓙⓚⓛⓜⓝ (U+24D0~U+24DD)
+- 숫자(1→①, 2→②, ...) → 반드시 ①②③④⑤⑥⑦⑧⑨⑩ (U+2460~U+2469)
+
+**3단계**: 절대 금지 사항
+- 동그라미 안 글자가 한글 자음(예: ㄹ)인데 ⓓ 또는 ④로 출력 → **금지**
+- 동그라미 안 글자가 라틴 소문자(예: a)인데 ㉠ 또는 ①로 출력 → **금지**
+- 동그라미 안 글자가 숫자(예: 1)인데 ⓛ 또는 ㉠으로 출력 → **금지**
+- 동그라미 마커를 일반 문자(@, *, a/b/c, 1/2/3)로 치환 → **금지**
+
+### 자주 발생하는 혼동 사례 (★ 정독)
+
+- **㉣ vs ⓓ vs ④**: 한글 ㄹ이면 반드시 ㉣
+- **㉤ vs ⓔ vs ⑩**: 한글 ㅁ이면 반드시 ㉤
+- **㉠ vs ⓐ vs ①**: 한글 ㄱ이면 반드시 ㉠
+- **고전시가/고전소설 본문에 등장하는 동그라미 마커는 거의 항상 한글 자음(㉠-㉭) 계열**
+
+### 기타 특수 문자 (기존 규칙 유지)
+
 - 괄호 한글: ㈀㈁㈂㈃㈄ 또는 (가)(나)(다)(라)(마) 형태 유지
 - 로마 숫자: Ⅰ, Ⅱ, Ⅲ, Ⅳ, Ⅴ (I, II 등 라틴 문자로 치환 금지)
 - 특수 괄호: 〈〉, 《》, 「」, 『』 (< > 등 일반 괄호로 치환 금지)
 - 화살표/기호: →, ←, ↔, ⇒, ∴, ∵, ※ 등 그대로 유지
+
+### 응답 직전 자체 검토 (필수)
+
+JSON 출력 직전, 본문에 포함된 모든 동그라미 마커에 대해 (1) 원본 이미지 위치 재확인 (2) 안 글자 계열 재확인 (3) 출력 유니코드가 정확한 계열인지 검증. 검토를 거치지 않은 응답은 무효합니다.
 
 ## 구간 표시
 - 구간 표시 ([A], [가], [Ⅰ], (가) 등 모든 형식):
