@@ -455,6 +455,65 @@ export interface AnalysisResult {
 }
 
 /**
+ * 원문자(circled marker) 검증·교정 유틸
+ * Gemini가 시각적으로 유사한 원문자 계열을 가끔 혼동하는 문제 대응
+ */
+const MARKER_RE = /[①-⑩ⓐ-ⓝ㉠-㉭]/gu;
+
+function markerCategory(c: string): "num" | "lat" | "kor" | "?" {
+  if (/[①-⑩]/u.test(c)) return "num";
+  if (/[ⓐ-ⓝ]/u.test(c)) return "lat";
+  if (/[㉠-㉭]/u.test(c)) return "kor";
+  return "?";
+}
+
+function majorityCategory(arr: string[]): string {
+  const tally: Record<string, number> = {};
+  for (const c of arr) {
+    const k = markerCategory(c);
+    tally[k] = (tally[k] ?? 0) + 1;
+  }
+  return Object.entries(tally).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "?";
+}
+
+/**
+ * 메인 분석 결과의 마커를 이미지 검증 결과로 위치별 덮어쓰기
+ * - 길이가 같을 때만 교체 (안전)
+ * - 본문/verify 다수결 계열이 다르면 skip (정당한 ⓐⓑⓒ 역회귀 회피)
+ * - 변경 개수가 절반 초과면 skip (시각-문서 순서 불일치 의심)
+ */
+function reconcileMarkers(html: string, verified: string[] | null): string {
+  if (!verified || !html) return html;
+  const found = html.match(MARKER_RE) ?? [];
+  if (found.length === 0) return html;
+  if (found.length !== verified.length) {
+    console.warn(`⚠️ [marker] 길이 불일치 — main=${found.length}, verify=${verified.length}, skip`);
+    return html;
+  }
+  const bodyCat = majorityCategory(found);
+  const verCat = majorityCategory(verified);
+  if (bodyCat !== "?" && verCat !== "?" && bodyCat !== verCat) {
+    console.warn(`⚠️ [marker] 계열 mismatch — body=${bodyCat}, verify=${verCat}, skip`);
+    return html;
+  }
+  let i = 0;
+  let changed = 0;
+  const fixed = html.replace(MARKER_RE, (m) => {
+    const v = verified[i++];
+    if (v && v !== m) { changed++; return v; }
+    return m;
+  });
+  if (changed > Math.floor(found.length / 2)) {
+    console.warn(`⚠️ [marker] 변경 과다(${changed}/${found.length}) — 순서 불일치 의심, skip`);
+    return html;
+  }
+  if (changed > 0) {
+    console.warn(`✏️ [marker] ${changed}개 교정: ${found.join("")} → ${verified.join("")}`);
+  }
+  return fixed;
+}
+
+/**
  * bodyHtml에서 <보기> 블록을 감지하여 conditionHtml로 추출
  * Gemini가 conditionHtml 대신 bodyHtml에 보기를 넣는 경우의 후처리
  */
@@ -530,6 +589,48 @@ async function detectDiagram(
     ? "insideCondition" as const
     : "afterBody" as const;
   return { hasDiagram: true, position };
+}
+
+/**
+ * 이미지에서 원문자(circled marker) 시퀀스를 강건하게 추출 — 메인 분석 결과 검증/교정용
+ * 실패 시 null 반환 (메인 분석에 영향 없음)
+ *
+ * safeGenerate를 우회하는 이유: RECITATION 재시도 suffix("교육 방송 자료 제작용 변환")가
+ * 마커 추출 태스크와 문맥 불일치. 자체 try/catch로 격리.
+ */
+async function verifyMarkersFromImage(
+  client: InstanceType<typeof GoogleGenerativeAI>,
+  imageContent: { inlineData: { mimeType: string; data: string } }
+): Promise<string[] | null> {
+  try {
+    const model = client.getGenerativeModel({
+      model: "gemini-3-flash-preview",
+      systemInstruction: `이미지에 있는 원문자(circled marker)만 위에서 아래·왼쪽에서 오른쪽 순서로 정확한 유니코드로 추출합니다.
+
+판별 기준 (★ 동그라미 안 글자로 계열 결정):
+- 동그라미 안이 한글 자음(ㄱ,ㄴ,ㄷ,ㄹ,ㅁ,ㅂ,ㅅ,ㅇ,ㅈ,ㅊ,ㅋ,ㅌ,ㅍ,ㅎ) → 반드시 ㉠ ㉡ ㉢ ㉣ ㉤ ㉥ ㉦ ㉧ ㉨ ㉩ ㉪ ㉫ ㉬ ㉭ (U+3260대)
+- 동그라미 안이 라틴 소문자(a,b,c,...) → 반드시 ⓐ ⓑ ⓒ ⓓ ⓔ ⓕ ⓖ ⓗ ⓘ ⓙ ⓚ ⓛ ⓜ ⓝ (U+24D0대)
+- 동그라미 안이 숫자(1,2,3,...) → 반드시 ① ② ③ ④ ⑤ ⑥ ⑦ ⑧ ⑨ ⑩ (U+2460대)
+- 시각적으로 유사하다는 이유로 다른 계열을 사용하지 마세요
+
+응답 형식: JSON 배열만. 다른 텍스트 금지. 원문 텍스트는 절대 반환하지 마세요.
+예: ["㉠","㉡","㉣","㉤","①","②","③","④","⑤"]
+원문자가 없으면 []`,
+    });
+
+    const result = await model.generateContent([
+      imageContent,
+      { text: "이 이미지의 모든 원문자 마커를 위→아래·좌→우 순서로 JSON 배열로만 응답하세요." },
+    ]);
+    const text = result.response.text()?.trim() ?? "";
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) return null;
+    const arr = JSON.parse(jsonMatch[0]);
+    if (!Array.isArray(arr) || !arr.every((s) => typeof s === "string")) return null;
+    return arr.filter((s) => /^[①-⑩ⓐ-ⓝ㉠-㉭]$/u.test(s));
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -660,14 +761,15 @@ export async function analyzeProblemImage(
   // TikZ 생성: detectDiagram으로 도형 유무 먼저 판별 후, 있을 때만 Pro로 생성
   const textTier = usePro ? "pro" : "flash";
 
-  // Step 1: 텍스트 분석 + 도형 유무/위치 판별 병렬 실행
-  const [parsed, diagramResult] = await Promise.all([
+  // Step 1: 텍스트 분석 + 도형 유무/위치 판별 + 마커 검증 병렬 실행
+  const [parsed, diagramResult, verifiedMarkers] = await Promise.all([
     analyzeText(client, imageContent, userMessage, textTier),
     detectDiagram(client, imageContent),
+    verifyMarkersFromImage(client, imageContent),
   ]);
   const hasDiagramDetected = diagramResult.hasDiagram;
   const diagramPosition = diagramResult.position;
-  console.log(`${textTier}(텍스트) 완료, 도형 감지: ${hasDiagramDetected}, 위치: ${diagramPosition}`);
+  console.log(`${textTier}(텍스트) 완료, 도형 감지: ${hasDiagramDetected}, 위치: ${diagramPosition}, 마커 검증: ${verifiedMarkers ? `[${verifiedMarkers.join("")}]` : "skip"}`);
 
   // Step 2: 도형이 있을 때만 TikZ 생성
   const tikzCode = hasDiagramDetected
@@ -706,10 +808,25 @@ export async function analyzeProblemImage(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const p = parsed as any;
 
-  // 후처리: bodyHtml에 <보기> 내용이 포함된 경우 conditionHtml로 추출
+  // 후처리 1: 마커 교정 — 이미지 검증 결과를 ground truth로 사용
+  //   bodyHtml + conditionHtml + choicesHtml 을 SOH(U+0001)로 결합한 단일 시퀀스에서
+  //   verifiedMarkers(이미지 좌→우·위→아래 순서)와 위치별 정렬·교체
+  //   원본의 undefined 의미는 hadCond/hadCh로 보존(빈 문자열 ≠ undefined)
   let bodyHtml: string = p.bodyHtml || "";
   let conditionHtml: string | undefined = p.conditionHtml || undefined;
+  const rawChoicesHtml: string | undefined = p.choicesHtml || undefined;
 
+  const SOH = "";
+  const hadCond = conditionHtml !== undefined;
+  const hadCh = rawChoicesHtml !== undefined;
+  const combined = [bodyHtml, conditionHtml ?? "", rawChoicesHtml ?? ""].join(SOH);
+  const reconciled = reconcileMarkers(combined, verifiedMarkers);
+  const parts = reconciled.split(SOH);
+  bodyHtml = parts[0] ?? bodyHtml;
+  conditionHtml = hadCond ? parts[1] : undefined;
+  const choicesHtmlFixed = hadCh ? parts[2] : undefined;
+
+  // 후처리 2: bodyHtml에 <보기> 내용이 포함된 경우 conditionHtml로 추출
   if (!conditionHtml && bodyHtml) {
     const extracted = extractConditionFromBody(bodyHtml);
     if (extracted) {
@@ -736,7 +853,7 @@ export async function analyzeProblemImage(
     diagramPngBase64,
     diagramLayout,
     diagramPosition,
-    choicesHtml: p.choicesHtml || undefined,
+    choicesHtml: choicesHtmlFixed,
   };
 
   const html = generateProblemHtml(problemData, renderOptions);
